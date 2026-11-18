@@ -5,9 +5,9 @@ using TabletApp.UI;
 namespace TabletApp;
 
 /// <summary>
-/// Mode test sans UI (<c>--self-test</c>) : simule 30 s d'animation en pas de
-/// 16 ms, vérifie les invariants du clignement et du regard, et rend 4 frames
-/// offscreen en PNG (vérifiables sans écran). Usage :
+/// Mode test sans UI (<c>--self-test</c>) : simule l'animation en pas de 16 ms,
+/// vérifie les invariants du clignement, du regard et du sommeil, et rend des
+/// frames offscreen en PNG (vérifiables sans écran). Usage :
 /// <c>dotnet run --project src/TabletApp -- --self-test</c>.
 /// Le rapport est affiché dans la console et copié dans %TEMP%\tabletapp-selftest.txt.
 /// </summary>
@@ -20,7 +20,7 @@ internal static class SelfTest
     {
         AttachConsole(-1); // ATTACH_PARENT_PROCESS : sortie dans le terminal appelant.
         var log = new List<string>();
-        bool ok = CheckBlink(log) & CheckGaze(log);
+        bool ok = CheckBlink(log) & CheckGaze(log) & CheckSleep(log);
         RenderFrames(log);
         log.Add(ok ? "SELF-TEST: PASS" : "SELF-TEST: FAIL");
         foreach (string line in log)
@@ -106,20 +106,78 @@ internal static class SelfTest
         return ok;
     }
 
+    private static bool CheckSleep(List<string> log)
+    {
+        var sleep = new SleepController();
+        var step = TimeSpan.FromMilliseconds(16);
+        var now = TimeSpan.Zero;
+        var end = TimeSpan.FromSeconds(20);
+        sleep.FallAsleep(TimeSpan.FromSeconds(1));
+        bool wakeSent = false;
+        double maxYawn = 0;
+        bool asleepStatic = true; // EyeOpen == 0 sur [5, 9]
+        double wakeMin = 1;
+        double wakeMax = 0;
+        bool reachedAsleep = false;
+        bool reachedAwakeAgain = false;
+
+        while (now < end)
+        {
+            if (!wakeSent && now >= TimeSpan.FromSeconds(10))
+            {
+                sleep.WakeUp(now);
+                wakeSent = true;
+            }
+            sleep.Update(now);
+            if (sleep.Current == SleepController.State.Asleep)
+            {
+                reachedAsleep = true;
+            }
+            if (wakeSent && sleep.Current == SleepController.State.Awake)
+            {
+                reachedAwakeAgain = true;
+            }
+            if (sleep.Current == SleepController.State.Yawning)
+            {
+                maxYawn = Math.Max(maxYawn, sleep.Yawn);
+            }
+            if (now >= TimeSpan.FromSeconds(5) && now < TimeSpan.FromSeconds(9) && sleep.EyeOpen != 0)
+            {
+                asleepStatic = false;
+            }
+            if (sleep.Current == SleepController.State.Waking)
+            {
+                wakeMin = Math.Min(wakeMin, sleep.EyeOpen);
+                wakeMax = Math.Max(wakeMax, sleep.EyeOpen);
+            }
+            now += step;
+        }
+
+        bool ok = reachedAsleep && reachedAwakeAgain && asleepStatic
+            && maxYawn > 0.5 && wakeMin < 0.3 && wakeMax > 0.6;
+        log.Add($"Sleep: endormi={reachedAsleep}, statique={asleepStatic}, " +
+            $"baillement max {maxYawn:F2}, réveil [{wakeMin:F2}-{wakeMax:F2}], " +
+            $"réveillé={reachedAwakeAgain} -> {(ok ? "OK" : "KO")}");
+        return ok;
+    }
+
     private static void RenderFrames(List<string> log)
     {
-        var frames = new (string Name, double Open, double GazeX, double GazeY)[]
+        var frames = new (string Name, double Open, double GazeX, double GazeY, double Yawn, double Time)[]
         {
-            ("neutre", 1.0, 0.0, 0.0),
-            ("clin", 0.0, 0.0, 0.0),
-            ("gauche", 1.0, -1.0, 0.0),
-            ("droite", 1.0, 1.0, 0.0),
+            ("neutre", 1.0, 0.0, 0.0, 0.0, 0.0),
+            ("clin", 0.0, 0.0, 0.0, 0.0, 0.0),
+            ("gauche", 1.0, -1.0, 0.0, 0.0, 0.0),
+            ("droite", 1.0, 1.0, 0.0, 0.0, 0.0),
+            ("baillement", 0.35, 0.0, 0.0, 1.0, 0.5),
+            ("dodo", 0.0, 0.0, 0.0, 0.0, 0.0),
+            ("reveil", 0.45, 0.0, 0.0, 0.0, 0.0),
         };
-        foreach (var (name, open, gazeX, gazeY) in frames)
+        foreach (var (name, open, gazeX, gazeY, yawn, time) in frames)
         {
             using var bitmap = new SKBitmap(800, 600);
             using var canvas = new SKCanvas(bitmap);
-            FacePainter.DrawFace(canvas, 800, 600, open, gazeX, gazeY);
+            FacePainter.DrawFace(canvas, 800, 600, open, gazeX, gazeY, yawn, time);
             using var image = SKImage.FromBitmap(bitmap);
             using var data = image.Encode(SKEncodedImageFormat.Png, 100);
             string path = Path.Combine(Path.GetTempPath(), $"tabletapp-frame-{name}.png");

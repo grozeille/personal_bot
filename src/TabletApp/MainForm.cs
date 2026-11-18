@@ -15,6 +15,10 @@ internal sealed class MainForm : Form
         BackColor = Color.Black;
         FormBorderStyle = FormBorderStyle.None;
         WindowState = FormWindowState.Maximized;
+
+        _face = new RobotFaceRenderer { Dock = DockStyle.Fill };
+        Controls.Add(_face);
+
         KeyPreview = true;
         KeyDown += (_, e) =>
         {
@@ -22,10 +26,15 @@ internal sealed class MainForm : Form
             {
                 Close();
             }
+            else if (e.KeyCode == Keys.S)
+            {
+                _face.FallAsleep();
+            }
+            else if (e.KeyCode == Keys.W)
+            {
+                _face.WakeUp();
+            }
         };
-
-        _face = new RobotFaceRenderer { Dock = DockStyle.Fill };
-        Controls.Add(_face);
 
         _titleTimer = new System.Windows.Forms.Timer { Interval = 1000 };
         _titleTimer.Tick += (_, _) => Text = $"Robot Companion — {_face.Fps} FPS";

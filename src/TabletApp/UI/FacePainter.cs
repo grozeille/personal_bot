@@ -14,19 +14,25 @@ internal static class FacePainter
 
     public static void DrawFace(
         SKCanvas canvas, int width, int height,
-        double openAmount, double gazeX, double gazeY)
+        double openAmount, double gazeX, double gazeY,
+        double yawn, double timeSeconds)
     {
         canvas.Clear(SKColors.Black);
         float r = Math.Min(width, height) * 0.11f;
         float cy = height * 0.44f;
-        DrawEye(canvas, width * 0.5f - r * 1.7f, cy, r, openAmount, gazeX, gazeY);
-        DrawEye(canvas, width * 0.5f + r * 1.7f, cy, r, openAmount, gazeX, gazeY);
+        DrawEye(canvas, width * 0.5f - r * 1.7f, cy, r, openAmount, gazeX, gazeY, yawn, timeSeconds);
+        DrawEye(canvas, width * 0.5f + r * 1.7f, cy, r, openAmount, gazeX, gazeY, yawn, timeSeconds);
     }
 
     private static void DrawEye(
         SKCanvas canvas, float cx, float cy, float r,
-        double open, double gazeX, double gazeY)
+        double open, double gazeX, double gazeY,
+        double yawn, double timeSeconds)
     {
+        // Bâillement : œil écrasé horizontalement + léger tremblement vertical.
+        float rx = (float)(r * (1 - 0.25 * yawn));
+        float cyTremble = cy + (float)(Math.Sin(timeSeconds * 45) * 2.0 * yawn);
+
         // Halo.
         using (var glow = new SKPaint
         {
@@ -42,12 +48,12 @@ internal static class FacePainter
         float ry = Math.Max(2f, (float)(r * open));
         using (var body = new SKPaint { Color = EyeColor, IsAntialias = true })
         {
-            canvas.DrawOval(cx, cy, r, ry, body);
+            canvas.DrawOval(cx, cyTremble, rx, ry, body);
         }
 
         // Pupille décalée par le regard, contenue dans l'œil même à moitié fermé.
         float px = cx + (float)(gazeX * r * 0.42);
-        float py = cy - (float)(gazeY * r * 0.25);
+        float py = cyTremble - (float)(gazeY * r * 0.25);
         float pr = Math.Max(1.5f, (float)(r * 0.42 * (0.35 + 0.65 * open)));
         using (var pupil = new SKPaint { Color = CoreColor, IsAntialias = true })
         {
