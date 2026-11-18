@@ -1,19 +1,17 @@
 namespace TabletApp;
 
-// Fenêtre placeholder (issue #1) : prouve le pipeline WinForms win-x86.
-// Le rendu SkiaSharp 60 FPS arrive avec l'issue #2 (UI/RobotFaceRenderer.cs).
 internal static class Program
 {
     [STAThread]
-    private static void Main()
+    private static void Main(string[] args)
     {
-        ApplicationConfiguration.Initialize();
-        Application.Run(new Form
+        if (args.Contains("--self-test"))
         {
-            Text = "Robot Companion",
-            BackColor = Color.Black,
-            FormBorderStyle = FormBorderStyle.None,
-            WindowState = FormWindowState.Maximized,
-        });
+            Environment.Exit(SelfTest.Run() ? 0 : 1);
+            return;
+        }
+
+        ApplicationConfiguration.Initialize();
+        Application.Run(new MainForm());
     }
 }

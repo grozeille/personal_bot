@@ -38,6 +38,17 @@
         "panel": "shared"
       },
       "problemMatcher": "$msCompile"
+    },
+    {
+      "label": "self-test (Debug)",
+      "detail": "Vérifie la logique d'animation sans UI (clignement + regard).",
+      "type": "shell",
+      "command": "dotnet run --project ${workspaceFolder}/src/TabletApp/TabletApp.csproj -c Debug -- --self-test",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": "$msCompile"
     }
   ]
 }

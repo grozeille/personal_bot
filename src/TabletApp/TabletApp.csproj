@@ -19,4 +19,9 @@
     <None Include="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp" Version="4.157.0" />
+    <PackageReference Include="SkiaSharp.Views.WindowsForms" Version="4.157.0" />
+  </ItemGroup>
+
 </Project>
