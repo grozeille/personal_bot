@@ -21,6 +21,19 @@ L'exécutable 32 bits auto-contenu est produit dans
 `src/TabletApp/bin/Release/net8.0-windows/win-x86/publish/` — copiable tel quel sur la tablette.
 (Pas de CI : le build se fait en local, le binaire n'est jamais redistribué.)
 
+## Tests BDD (Reqnroll + xUnit)
+
+Scénarios Gherkin en français dans `tests/TabletApp.Tests/Features/`
+(clignement, surveillance, sommeil). Chaque scénario simule le visage en
+headless et produit **une capture finale** rendue offscreen.
+
+```powershell
+dotnet test tests/TabletApp.Tests/TabletApp.Tests.csproj
+```
+
+Le run génère `docs/rapport-tests/rapport.md` + PNG, consultables directement
+sur GitHub (pense à les committer). Tâche VS Code : "tests + rapport".
+
 ## Clé API Gemini (secret — jamais dans le dépôt)
 
 Ne mets **jamais** la clé dans `appsettings.json` (fichier suivi par git) et ne la colle

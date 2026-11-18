@@ -40,6 +40,17 @@
       "problemMatcher": "$msCompile"
     },
     {
+      "label": "tests + rapport",
+      "detail": "Lance la suite BDD et régénère docs/rapport-tests/rapport.md.",
+      "type": "shell",
+      "command": "dotnet test ${workspaceFolder}/tests/TabletApp.Tests/TabletApp.Tests.csproj -c Debug",
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      },
+      "problemMatcher": "$msCompile"
+    },
+    {
       "label": "self-test (Debug)",
       "detail": "Vérifie la logique d'animation sans UI (clignement + regard).",
       "type": "shell",
