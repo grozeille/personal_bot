@@ -8,6 +8,9 @@ out/
 TestResults/
 *.nupkg
 
+## Tests (Reqnroll : code-behind régénéré à chaque build)
+*.feature.cs
+
 ## Python (PiServoServer)
 __pycache__/
 *.py[cod]
