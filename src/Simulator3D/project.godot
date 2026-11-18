@@ -1,0 +1,6 @@
+; Jumeau numérique 3-DOF — squelette Godot 4 (le contenu arrive avec l'issue #8).
+config_version=5
+
+[application]
+
+config/name="RobotCompanionSimulator"

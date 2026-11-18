@@ -1,0 +1,35 @@
+## .NET
+bin/
+obj/
+out/
+.vs/
+*.user
+*.suo
+TestResults/
+*.nupkg
+
+## Python (PiServoServer)
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+## Godot 4 (Simulator3D)
+.godot/
+*.godot.uid
+android/
+export_presets.cfg
+export_credentials.cfg
+
+## OS / éditeurs
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+*.code-workspace
+
+## Secrets locaux (ne jamais committer)
+src/TabletApp/appsettings.Development.json
+src/TabletApp/appsettings.Local.json

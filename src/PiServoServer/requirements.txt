@@ -1,0 +1,5 @@
+# Serveur moteurs Raspberry Pi 1 — dépendances (le serveur arrive avec l'issue #9).
+# Transport : FastAPI/uvicorn OU websockets — choix tranché en #9.
+fastapi
+uvicorn
+adafruit-circuitpython-servokit
