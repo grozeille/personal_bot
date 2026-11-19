@@ -30,6 +30,7 @@ internal static class SvgFaceLoader
         Heart,
         ArcUp,
         ArcDown,
+        Check,
     }
 
     internal enum MouthVariant
@@ -58,6 +59,7 @@ internal static class SvgFaceLoader
         [RobotExpression.Sleep] = (EyeVariant.ArcDown, EyeVariant.ArcDown, MouthVariant.Flat),
         [RobotExpression.Thinking] = (EyeVariant.Oval, EyeVariant.Oval, MouthVariant.Slant),
         [RobotExpression.Shocked] = (EyeVariant.BigOval, EyeVariant.BigOval, MouthVariant.Ring),
+        [RobotExpression.Confirm] = (EyeVariant.X, EyeVariant.Check, MouthVariant.Flat),
     };
 
     private static string EyeFile(string side, EyeVariant variant) => variant switch
@@ -71,6 +73,7 @@ internal static class SvgFaceLoader
         EyeVariant.Heart => $"eye-{side}-heart.svg",
         EyeVariant.ArcUp => $"eye-{side}-arc-up.svg",
         EyeVariant.ArcDown => $"eye-{side}-arc-down.svg",
+        EyeVariant.Check => $"eye-{side}-check.svg",
         _ => throw new ArgumentOutOfRangeException(nameof(variant)),
     };
 

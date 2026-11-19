@@ -1,6 +1,7 @@
 # Visages — SVG
 
-12 expressions, redessinées à partir de l'image de référence.
+13 visages : 12 expressions redessinées à partir de l'image de référence
++ 1 dialogue de confirmation de mise à jour (pas une émotion).
 
 ## Grille commune (ne pas changer d'un fichier à l'autre)
 
@@ -32,6 +33,7 @@
 | 10-sleepy.svg | yeux fermés en arc, bouche plate |
 | 11-thinking.svg | regard vers le haut à gauche, bouche en biais |
 | 12-shocked.svg | yeux dilatés, bouche en O |
+| 13-confirm.svg | œil gauche X (annuler/rester), œil droit ✓ (confirmer/quitter), bouche plate |
 
 Ces fichiers ne sont plus lus par l'application : ils restent la référence
 visuelle d'auteur. Le rendu utilise la bibliothèque de parties ci-dessous.
@@ -48,7 +50,7 @@ ce qui saute la transition entre elles.
 |---|---|---|
 | eye-left-oval | 01 (absorbe les décalages de 5, 9 et 11) | 1, 5, 9, 11 |
 | eye-left-big-oval | 12 | 12 |
-| eye-left-x | 02 | 2 |
+| eye-left-x | 02 | 2, 13 |
 | eye-left-blade | 03 | 3 |
 | eye-left-chevron | 04 | 4 |
 | eye-left-dome | 06 | 6 |
@@ -60,12 +62,13 @@ ce qui saute la transition entre elles.
 | eye-right-x | 02 | 2 |
 | eye-right-blade | 03 | 3 |
 | eye-right-chevron | 04 (09 avait un chevron plus grand, unifié) | 4, 9 |
+| eye-right-check | 13 | 13 |
 | eye-right-dome | 06 | 6 |
 | eye-right-heart | 07 | 7 |
 | eye-right-arc-up | 08 | 8 |
 | eye-right-arc-down | 10 | 10 |
 | mouth-smile | 01 (03 décalé de 2 px, unifié) | 1, 3, 4, 7, 9 |
-| mouth-flat | 02 (= 10 à l'octet ; 06 plus court/fin/bas, unifié) | 2, 6, 10 |
+| mouth-flat | 02 (= 10 à l'octet ; 06 plus court/fin/bas, unifié) | 2, 6, 10, 13 |
 | mouth-open-d | 05 | 5 |
 | mouth-big-open | 08 | 8 |
 | mouth-slant | 11 | 11 |

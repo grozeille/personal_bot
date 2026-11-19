@@ -1,5 +1,6 @@
 using Reqnroll;
 using TabletApp.Tests.Support;
+using TabletApp.UI;
 using Xunit;
 
 namespace TabletApp.Tests.Steps;
@@ -37,20 +38,16 @@ public sealed class UpdateSteps
     public Task WhenVerifie() => _update.Updater.CheckAsync();
 
     [When("on appuie sur l'icône de mise à jour")]
-    public void WhenIcone() => _update.Down(790, 10);
+    public void WhenIcone() => _update.Tap(790, 10);
 
-    [When("on appuie loin de l'icône")]
-    public void WhenLoin() => _update.Down(400, 300);
+    [When("on appuie sur l'œil gauche")]
+    public void WhenOeilGauche() => _update.Tap(250, 300);
 
-    [When("^(\\d+) secondes? s'écoule(?:nt)? en maintenant l'appui sur l'icône$")]
-    public void WhenMaintienIcone(int seconds) =>
-        _update.Hold(TimeSpan.FromSeconds(seconds));
+    [When("on appuie sur l'œil droit")]
+    public void WhenOeilDroit() => _update.Tap(550, 300);
 
-    [When("on relâche l'icône")]
-    public void WhenRelacheIcone() => _update.Release();
-
-    [When("on lance l'installation de la mise à jour")]
-    public Task WhenInstalle() => _update.InstallAsync();
+    [When("on appuie loin des yeux")]
+    public void WhenLoin() => _update.Tap(400, 550);
 
     [Then("une mise à jour est proposée")]
     public void ThenProposee() =>
@@ -68,13 +65,29 @@ public sealed class UpdateSteps
     public void ThenIconeMasquee() =>
         Assert.False(SimulatedUpdate.IconVisibleOffscreen(updateAvailable: false));
 
-    [Then("la mise à jour est demandée")]
-    public void ThenDemandee() =>
-        Assert.True(_update.Gesture.UpdateRequested);
+    [Then("le visage de confirmation est affiché")]
+    public void ThenConfirmation() =>
+        Assert.True(_update.Confirm.Active && _update.Current == RobotExpression.Confirm);
 
-    [Then("la mise à jour n'est pas demandée")]
-    public void ThenPasDemandee() =>
-        Assert.False(_update.Gesture.UpdateRequested);
+    [Then("le regard est figé")]
+    public void ThenRegardFige() =>
+        Assert.False(FacePainter.LooksAround(RobotExpression.Confirm));
+
+    [Then("la confirmation est refermée")]
+    public void ThenRefermee() =>
+        Assert.False(_update.Confirm.Active);
+
+    [Then("la confirmation est toujours affichée")]
+    public void ThenToujours() =>
+        Assert.True(_update.Confirm.Active && _update.Current == RobotExpression.Confirm);
+
+    [Then("aucune confirmation n'est affichée")]
+    public void ThenAucune() =>
+        Assert.False(_update.Confirm.Active);
+
+    [Then("le visage précédent est restauré")]
+    public void ThenRestaure() =>
+        Assert.Equal(RobotExpression.Neutral, _update.Current);
 
     [Then("la version \"(.*)\" est installée")]
     public void ThenInstallee(string version) =>

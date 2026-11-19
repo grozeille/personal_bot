@@ -53,6 +53,7 @@ internal static class SelfTest
         RenderExpressionSheet(log);
         RenderTransitionFrame(log);
         RenderUpdateFrame(log);
+        RenderConfirmFrame(log);
         log.Add(ok ? "SELF-TEST: PASS" : "SELF-TEST: FAIL");
         foreach (string line in log)
         {
@@ -384,13 +385,13 @@ internal static class SelfTest
 
     private static void RenderUpdateFrame(List<string> log)
     {
-        // Icône de maj en haut à droite + anneau à 65 % (appui en cours).
+        // Icône de maj en haut à droite.
         using var bitmap = new SKBitmap(800, 600);
         using var canvas = new SKCanvas(bitmap);
         FacePainter.DrawFace(
             canvas, 800, 600, 1.0, 0, 0, 0, 0.49,
             RobotExpression.Neutral, RobotExpression.Neutral, 1.0, awake: true,
-            updateAvailable: true, updateProgress: 0.65);
+            updateAvailable: true);
         using var image = SKImage.FromBitmap(bitmap);
         using var data = image.Encode(SKEncodedImageFormat.Png, 100);
         string path = Path.Combine(Path.GetTempPath(), "tabletapp-frame-update.png");
@@ -399,12 +400,29 @@ internal static class SelfTest
         log.Add($"Frame 'update' -> {path}");
     }
 
+    private static void RenderConfirmFrame(List<string> log)
+    {
+        // Visage de confirmation (œil X annuler, œil ✓ confirmer).
+        using var bitmap = new SKBitmap(800, 600);
+        using var canvas = new SKCanvas(bitmap);
+        FacePainter.DrawFace(
+            canvas, 800, 600, 1.0, 0, 0, 0, 0.49,
+            RobotExpression.Confirm, RobotExpression.Confirm, 1.0, awake: true,
+            updateAvailable: true);
+        using var image = SKImage.FromBitmap(bitmap);
+        using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+        string path = Path.Combine(Path.GetTempPath(), "tabletapp-frame-confirm.png");
+        using var stream = File.OpenWrite(path);
+        data.SaveTo(stream);
+        log.Add($"Frame 'confirm' -> {path}");
+    }
+
     /// <summary>
     /// Sonde de validation du cycle de maj (<c>--self-test-update &lt;flux&gt;</c>) :
     /// exerce le vrai moteur Velopack contre un dossier de flux (local ou NAS),
     /// sans jamais appliquer ni redémarrer : détection, téléchargement réel
     /// (hash vérifié par le moteur), refus d'un paquet corrompu, dossier
-    /// absent silencieux, gestes d'appui et animation de l'icône. Les frames
+    /// absent silencieux, dialogue de confirmation et animation de l'icône. Les frames
     /// de preuve sont copiées dans %TEMP%\tabletapp-probe-*.png.
     /// Usage : <c>dotnet run --project src/TabletApp -- --self-test-update P:\RobotMaj</c>.
     /// Depuis l'app installée (Setup.exe), ajouter <c>--apply-and-restart</c>
@@ -425,7 +443,7 @@ internal static class SelfTest
             & ProbeCorrupt(feedDir, log)
             & ProbeDownload(feedDir, version, log)
             & ProbeOffline(log)
-            & ProbeGestures(log)
+            & ProbeConfirm(log)
             & ProbeIconFrames(log);
         if (ok && applyAndRestart && version is not null)
         {
@@ -664,75 +682,77 @@ internal static class SelfTest
         }
     }
 
-    private static bool ProbeGestures(List<string> log)
+    private static bool ProbeConfirm(List<string> log)
     {
-        // Appui 3 s sur l'icône -> demandé ; appui court -> sans effet ;
-        // appui hors zone (même maintenu) -> sans effet.
-        var hold = new UpdateGesture();
-        hold.Down(new PointF(790, 10), 800, TimeSpan.Zero);
-        hold.Tick(TimeSpan.FromSeconds(3));
-        bool holdOk = hold.UpdateRequested && hold.Progress == 1.0;
+        // Tap icône -> dialogue ; œil gauche -> annulé ; œil droit ->
+        // confirmé ; hors yeux et hors dialogue -> ignoré.
+        var dialog = new ConfirmDialog();
+        bool iconOk = ConfirmDialog.IconHit(new PointF(790, 10), 800)
+            && !ConfirmDialog.IconHit(new PointF(400, 300), 800);
+        bool cornerOk = ConfirmDialog.QuitHit(new PointF(10, 10))
+            && !ConfirmDialog.QuitHit(new PointF(400, 300));
+        bool inactiveOk = dialog.Tap(550, 280) == ConfirmTap.Ignored;
+        dialog.Show(RobotExpression.Happy, ConfirmPurpose.Update);
+        bool cancelOk = dialog.Tap(250, 280) == ConfirmTap.Cancelled
+            && !dialog.Active && dialog.Previous == RobotExpression.Happy;
+        dialog.Show(RobotExpression.Happy, ConfirmPurpose.Update);
+        bool confirmOk = dialog.Tap(550, 280) == ConfirmTap.Confirmed
+            && !dialog.Active && dialog.Purpose == ConfirmPurpose.Update;
+        dialog.Show(RobotExpression.Happy, ConfirmPurpose.Quit);
+        bool quitOk = dialog.Tap(550, 280) == ConfirmTap.Confirmed
+            && dialog.Purpose == ConfirmPurpose.Quit;
+        dialog.Show(RobotExpression.Happy, ConfirmPurpose.Update);
+        bool outsideOk = dialog.Tap(400, 500) == ConfirmTap.Ignored && dialog.Active;
+        bool frozenOk = !FacePainter.LooksAround(RobotExpression.Confirm);
 
-        var tap = new UpdateGesture();
-        tap.Down(new PointF(790, 10), 800, TimeSpan.Zero);
-        tap.Tick(TimeSpan.FromSeconds(1));
-        tap.Up(TimeSpan.FromSeconds(1));
-        bool tapOk = !tap.UpdateRequested && tap.Progress == 0;
-
-        var away = new UpdateGesture();
-        away.Down(new PointF(400, 300), 800, TimeSpan.Zero);
-        away.Tick(TimeSpan.FromSeconds(5));
-        away.Up(TimeSpan.FromSeconds(5));
-        bool awayOk = !away.UpdateRequested && away.Progress == 0;
-
-        bool ok = holdOk && tapOk && awayOk;
-        log.Add($"Probe/Gestures: appui 3 s={holdOk}, court sans effet={tapOk}, " +
-            $"hors zone sans effet={awayOk} -> {(ok ? "OK" : "KO")}");
+        bool ok = iconOk && cornerOk && inactiveOk && cancelOk && confirmOk
+            && quitOk && outsideOk && frozenOk;
+        log.Add($"Probe/Confirm: icône={iconOk}, coin={cornerOk}, inactif ignoré={inactiveOk}, " +
+            $"gauche annule={cancelOk}, droit confirme={confirmOk}, but sortie={quitOk}, " +
+            $"hors yeux ignoré={outsideOk}, regard figé={frozenOk} -> {(ok ? "OK" : "KO")}");
         return ok;
     }
 
     private static bool ProbeIconFrames(List<string> log)
     {
         // Pulsation multi-frames (plusieurs rendus distincts au repos),
-        // grossissement réactif (0 / 0,5 / 1 distincts), icône absente sans maj.
+        // visage de confirmation distinct du neutre, icône absente sans maj.
         var pulses = Enumerable.Range(0, 8)
-            .Select(i => Convert.ToHexString(RenderUpdateBytes(i * 0.25, 0, available: true)))
+            .Select(i => Convert.ToHexString(RenderUpdateBytes(i * 0.25, available: true)))
             .Distinct().Count();
-        byte[] ring0 = RenderUpdateBytes(0.49, 0, available: true);
-        byte[] ringHalf = RenderUpdateBytes(0.49, 0.5, available: true);
-        byte[] ringFull = RenderUpdateBytes(0.49, 1, available: true);
-        bool ringOk = !ring0.SequenceEqual(ringHalf)
-            && !ringHalf.SequenceEqual(ringFull)
-            && !ring0.SequenceEqual(ringFull);
-        byte[] none = RenderUpdateBytes(0.49, 0, available: false);
-        bool gatedOk = !ring0.SequenceEqual(none);
+        byte[] rest = RenderUpdateBytes(0.49, available: true);
+        byte[] confirm = RenderUpdateBytes(0.49, available: true, RobotExpression.Confirm);
+        byte[] none = RenderUpdateBytes(0.49, available: false);
+        bool confirmOk = !rest.SequenceEqual(confirm);
+        bool gatedOk = !rest.SequenceEqual(none);
         bool pulseOk = pulses >= 4;
 
-        SaveProbeFrame("rest", 0.49, 0);
-        SaveProbeFrame("hold", 0.49, 0.65);
+        SaveProbeFrame("rest", 0.49, RobotExpression.Neutral);
+        SaveProbeFrame("confirm", 0.49, RobotExpression.Confirm);
 
-        bool ok = pulseOk && ringOk && gatedOk;
-        log.Add($"Probe/Icon: {pulses}/8 frames pulsées distinctes, appui 0/50/100 " +
-            $"distinct={ringOk}, masquée sans maj={gatedOk} -> {(ok ? "OK" : "KO")}");
+        bool ok = pulseOk && confirmOk && gatedOk;
+        log.Add($"Probe/Icon: {pulses}/8 frames pulsées distinctes, confirmation " +
+            $"distincte={confirmOk}, masquée sans maj={gatedOk} -> {(ok ? "OK" : "KO")}");
         return ok;
     }
 
-    private static byte[] RenderUpdateBytes(double time, double progress, bool available)
+    private static byte[] RenderUpdateBytes(
+        double time, bool available, RobotExpression expression = RobotExpression.Neutral)
     {
         using var bitmap = new SKBitmap(800, 600);
         using var canvas = new SKCanvas(bitmap);
         FacePainter.DrawFace(
             canvas, 800, 600, 1.0, 0, 0, 0, time,
-            RobotExpression.Neutral, RobotExpression.Neutral, 1.0, awake: true,
-            updateAvailable: available, updateProgress: progress);
+            expression, expression, 1.0, awake: true,
+            updateAvailable: available);
         using var image = SKImage.FromBitmap(bitmap);
         using var data = image.Encode(SKEncodedImageFormat.Png, 100);
         return data.ToArray();
     }
 
-    private static void SaveProbeFrame(string name, double time, double progress)
+    private static void SaveProbeFrame(string name, double time, RobotExpression expression)
     {
-        byte[] bytes = RenderUpdateBytes(time, progress, available: true);
+        byte[] bytes = RenderUpdateBytes(time, available: true, expression);
         File.WriteAllBytes(Path.Combine(Path.GetTempPath(), $"tabletapp-probe-{name}.png"), bytes);
     }
 

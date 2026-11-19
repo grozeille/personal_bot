@@ -32,8 +32,8 @@ internal sealed class RobotFaceRenderer : UserControl
     /// <summary>Maj disponible : affiche l'icône en haut à droite.</summary>
     public bool UpdateAvailable { get; set; }
 
-    /// <summary>Progression 0..1 de l'appui sur l'icône (anneau).</summary>
-    public double UpdateProgress { get; set; }
+    /// <summary>Expression affichée (pour restaurer après la confirmation).</summary>
+    public RobotExpression CurrentExpression => _expression.Current;
 
     public RobotFaceRenderer()
     {
@@ -109,7 +109,7 @@ internal sealed class RobotFaceRenderer : UserControl
             open, _gaze.X, _gaze.Y, _sleep.Yawn, now.TotalSeconds,
             _expression.Current, _expression.Previous, _expression.Progress,
             mouthOverride, _sleep.IsAwake,
-            updateAvailable: UpdateAvailable, updateProgress: UpdateProgress);
+            updateAvailable: UpdateAvailable);
     }
 
     private void UpdateFps(TimeSpan now)

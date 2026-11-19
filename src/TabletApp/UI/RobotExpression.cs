@@ -18,6 +18,8 @@ internal enum RobotExpression
     Tired,
     Thinking,
     Shocked,
+    /// <summary>Dialogue de confirmation de maj (UI uniquement, pas une émotion).</summary>
+    Confirm,
 }
 
 /// <summary>

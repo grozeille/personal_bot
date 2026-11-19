@@ -31,13 +31,25 @@ internal static class FacePainter
     private const float ViewH = 550f;
     private const float FaceCenterX = 400f;
 
+    /// <summary>
+    /// Convertit des pixels écran en coordonnées vue 800×550 (inverse de la
+    /// mise à l'échelle du dessin), pour les zones de tap.
+    /// </summary>
+    public static (float X, float Y) ToView(float x, float y, int width, int height)
+    {
+        float scale = Math.Min(width / ViewW, height / ViewH);
+        float ox = (width - ViewW * scale) / 2;
+        float oy = (height - ViewH * scale) / 2;
+        return ((x - ox) / scale, (y - oy) / scale);
+    }
+
     public static void DrawFace(
         SKCanvas canvas, int width, int height,
         double openAmount, double gazeX, double gazeY,
         double yawn, double timeSeconds,
         RobotExpression expression, RobotExpression previous, double progress,
         MouthOverride? mouthOverride = null, bool awake = true, bool enableGlow = true,
-        bool updateAvailable = false, double updateProgress = 0)
+        bool updateAvailable = false)
     {
         canvas.Clear(SKColors.Black);
         var face = SvgFaceLoader.For(expression);
@@ -97,7 +109,7 @@ internal static class FacePainter
             if (updateAvailable)
             {
                 float size = Math.Min(width, height) * 0.09f;
-                UpdateIcon.Draw(canvas, width - 14, 14, size, updateProgress, timeSeconds);
+                UpdateIcon.Draw(canvas, width - 14, 14, size, timeSeconds);
             }
         }
     }
@@ -116,6 +128,8 @@ internal static class FacePainter
         RobotExpression.Tired => false,
         RobotExpression.Wink => false,
         RobotExpression.Sleep => false,
+        // Confirmation de maj : regard figé pour des zones de tap stables.
+        RobotExpression.Confirm => false,
         _ => true,
     };
 

@@ -43,20 +43,21 @@ internal sealed class FakeUpdateSource : IUpdateSource
 }
 
 /// <summary>
-/// Mise à jour simulée : horloge + <c>RobotUpdater</c> sur source factice +
-/// <c>UpdateGesture</c> (écran 800 px de large) pour assertions.
+/// Mise à jour simulée : <c>RobotUpdater</c> sur source factice +
+/// <c>ConfirmDialog</c> (écran 800×600) pour assertions.
 /// </summary>
 internal sealed class SimulatedUpdate
 {
     public const float ScreenWidth = 800;
+    public const float ScreenHeight = 600;
 
     public FakeUpdateSource Source { get; } = new();
 
     public RobotUpdater Updater { get; }
 
-    public UpdateGesture Gesture { get; } = new();
+    public ConfirmDialog Confirm { get; } = new();
 
-    public TimeSpan Now { get; private set; }
+    public RobotExpression Current { get; private set; } = RobotExpression.Neutral;
 
     public string CurrentVersion { get; private set; } = "1.0.0";
 
@@ -65,21 +66,35 @@ internal sealed class SimulatedUpdate
         Updater = new RobotUpdater(Source);
     }
 
-    public void Down(float x, float y) =>
-        Gesture.Down(new PointF(x, y), ScreenWidth, Now);
-
-    public void Hold(TimeSpan duration)
+    /// <summary>Tap en pixels écran (comme MainForm : icône puis yeux).</summary>
+    public void Tap(float x, float y)
     {
-        TimeSpan end = Now + duration;
-        while (Now < end)
+        if (!Updater.UpdateAvailable)
         {
-            Gesture.Tick(Now);
-            Now += TimeSpan.FromMilliseconds(100);
+            return;
         }
-        Gesture.Tick(Now);
+        if (Confirm.Active)
+        {
+            (float vx, float vy) = FacePainter.ToView(x, y, (int)ScreenWidth, (int)ScreenHeight);
+            switch (Confirm.Tap(vx, vy))
+            {
+                case ConfirmTap.Cancelled:
+                    Current = Confirm.Previous;
+                    break;
+                case ConfirmTap.Confirmed:
+                    Current = Confirm.Previous;
+                    InstallAsync().GetAwaiter().GetResult();
+                    break;
+                case ConfirmTap.Ignored:
+                    break;
+            }
+        }
+        else if (ConfirmDialog.IconHit(new PointF(x, y), ScreenWidth))
+        {
+            Confirm.Show(Current, ConfirmPurpose.Update);
+            Current = RobotExpression.Confirm;
+        }
     }
-
-    public void Release() => Gesture.Up(Now);
 
     public async Task InstallAsync()
     {

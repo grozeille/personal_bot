@@ -4,26 +4,39 @@ using TabletApp.UI;
 namespace TabletApp.Tests.Support;
 
 /// <summary>
-/// Geste de sortie simulé : horloge + <c>QuitGesture</c> pour assertions.
+/// Sortie simulée : <c>ConfirmDialog</c> en mode sortie (écran 800×600).
 /// </summary>
 internal sealed class SimulatedQuit
 {
-    public QuitGesture Gesture { get; } = new();
-    public TimeSpan Now { get; private set; }
+    public const float ScreenWidth = 800;
+    public const float ScreenHeight = 600;
 
-    public void Down(float x, float y) =>
-        Gesture.Down(new PointF(x, y), Now);
+    public ConfirmDialog Confirm { get; } = new();
 
-    public void Hold(TimeSpan duration)
+    public bool QuitRequested { get; private set; }
+
+    public RobotExpression Current { get; private set; } = RobotExpression.Neutral;
+
+    /// <summary>Tap en pixels écran (comme MainForm : coin puis yeux).</summary>
+    public void Tap(float x, float y)
     {
-        TimeSpan end = Now + duration;
-        while (Now < end)
+        if (Confirm.Active)
         {
-            Gesture.Tick(Now);
-            Now += TimeSpan.FromMilliseconds(100);
+            (float vx, float vy) = FacePainter.ToView(x, y, (int)ScreenWidth, (int)ScreenHeight);
+            if (Confirm.Tap(vx, vy) == ConfirmTap.Confirmed
+                && Confirm.Purpose == ConfirmPurpose.Quit)
+            {
+                QuitRequested = true;
+            }
+            else if (!Confirm.Active)
+            {
+                Current = Confirm.Previous;
+            }
         }
-        Gesture.Tick(Now);
+        else if (ConfirmDialog.QuitHit(new PointF(x, y)))
+        {
+            Confirm.Show(Current, ConfirmPurpose.Quit);
+            Current = RobotExpression.Confirm;
+        }
     }
-
-    public void Release() => Gesture.Up(Now);
 }

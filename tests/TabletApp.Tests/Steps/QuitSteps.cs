@@ -1,5 +1,6 @@
 using Reqnroll;
 using TabletApp.Tests.Support;
+using TabletApp.UI;
 using Xunit;
 
 namespace TabletApp.Tests.Steps;
@@ -19,28 +20,46 @@ public sealed class QuitSteps
         _quit = quit;
     }
 
-    [Given("un geste de sortie")]
-    public void GivenGeste() =>
-        Assert.False(_quit.Gesture.QuitRequested);
+    [Given("un dialogue de sortie")]
+    public void GivenDialogue() =>
+        Assert.False(_quit.Confirm.Active);
 
     [When("on appuie dans le coin haut-gauche")]
-    public void WhenCoin() => _quit.Down(10, 10);
+    public void WhenCoin() => _quit.Tap(10, 10);
 
     [When("on appuie au milieu de l'écran")]
-    public void WhenMilieu() => _quit.Down(400, 300);
+    public void WhenMilieu() => _quit.Tap(400, 300);
 
-    [When("^(\\d+) secondes? s'écoule(?:nt)? en maintenant l'appui$")]
-    public void WhenMaintien(int seconds) =>
-        _quit.Hold(TimeSpan.FromSeconds(seconds));
+    [When("on appuie sur l'œil gauche pour rester")]
+    public void WhenOeilGauche() => _quit.Tap(250, 300);
 
-    [When("on relâche l'appui")]
-    public void WhenRelache() => _quit.Release();
+    [When("on appuie sur l'œil droit pour quitter")]
+    public void WhenOeilDroit() => _quit.Tap(550, 300);
+
+    [When("on appuie sur la bouche")]
+    public void WhenBouche() => _quit.Tap(400, 420);
+
+    [Then("le visage de sortie est affiché")]
+    public void ThenSortie() =>
+        Assert.True(_quit.Confirm.Active && _quit.Current == RobotExpression.Confirm);
+
+    [Then("la sortie reste affichée")]
+    public void ThenReste() =>
+        Assert.True(_quit.Confirm.Active && _quit.Current == RobotExpression.Confirm);
+
+    [Then("aucune sortie n'est proposée")]
+    public void ThenAucune() =>
+        Assert.False(_quit.Confirm.Active);
+
+    [Then("l'application reste ouverte")]
+    public void ThenOuverte() =>
+        Assert.False(_quit.Confirm.Active);
 
     [Then("la fermeture est demandée")]
     public void ThenDemandee() =>
-        Assert.True(_quit.Gesture.QuitRequested);
+        Assert.True(_quit.QuitRequested);
 
     [Then("la fermeture n'est pas demandée")]
     public void ThenPasDemandee() =>
-        Assert.False(_quit.Gesture.QuitRequested);
+        Assert.False(_quit.QuitRequested);
 }
