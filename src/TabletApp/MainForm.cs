@@ -32,6 +32,7 @@ internal sealed class MainForm : Form
     private readonly RobotUpdater _updater;
     private readonly QuitMessageFilter _quitFilter;
     private bool _applying;
+    private bool _iconPreview;
 
     // Empêche la mise en veille de l'écran / du système (tête de robot allumée en continu).
     [DllImport("kernel32.dll")]
@@ -85,6 +86,13 @@ internal sealed class MainForm : Form
                 // Dev : forcer une vérification de maj (le robot le fait seul toutes les 5 min).
                 _ = CheckForUpdatesAsync();
             }
+            else if (e.KeyCode == Keys.I)
+            {
+                // Dev : aperçu de l'icône de maj (sans NAS), y compris le
+                // feedback d'appui. Sans effet sur la vraie détection.
+                _iconPreview = !_iconPreview;
+                UpdateFaceIcon();
+            }
             else if (Digit(e.KeyCode) is { } digit)
             {
                 _face.SetExpression(ExpressionKeys[digit]);
@@ -97,7 +105,8 @@ internal sealed class MainForm : Form
         _titleTimer = new System.Windows.Forms.Timer { Interval = 1000 };
         _titleTimer.Tick += (_, _) =>
             Text = $"Robot Companion — {_face.Fps} FPS"
-                + (_updater.UpdateAvailable ? " — MAJ !" : "");
+                + (_updater.UpdateAvailable ? " — MAJ !" : "")
+                + (_iconPreview ? " — APERÇU" : "");
         _titleTimer.Start();
 
         _holdTimer = new System.Windows.Forms.Timer { Interval = 100 };
@@ -188,13 +197,16 @@ internal sealed class MainForm : Form
             return;
         }
         await _updater.CheckAsync().ConfigureAwait(true);
-        _face.UpdateAvailable = _updater.UpdateAvailable;
+        UpdateFaceIcon();
         if (!_updater.UpdateAvailable)
         {
             _update.Reset();
             _face.UpdateProgress = 0;
         }
     }
+
+    private void UpdateFaceIcon() =>
+        _face.UpdateAvailable = _updater.UpdateAvailable || _iconPreview;
 
     private async Task DownloadAndApplyAsync()
     {
@@ -205,7 +217,7 @@ internal sealed class MainForm : Form
         // Échec = on réarme le geste, la maj reste proposée.
         _update.Reset();
         _face.UpdateProgress = 0;
-        _face.UpdateAvailable = _updater.UpdateAvailable;
+        UpdateFaceIcon();
         _applying = false;
     }
 
@@ -213,8 +225,10 @@ internal sealed class MainForm : Form
     {
         Point location = PointToClient(MousePosition);
         _quit.Down(location, Now());
-        if (_updater.UpdateAvailable)
+        if (_face.UpdateAvailable)
         {
+            // Icône visible (vraie maj ou aperçu dev) : l'appui maintenu
+            // est suivi ; sans maj réelle, l'installation est sans effet.
             _update.Down(location, ClientSize.Width, Now());
         }
         _holdTimer.Start();

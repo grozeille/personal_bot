@@ -41,6 +41,7 @@ sur GitHub (pense à les committer). Tâche VS Code : "tests + rapport".
 - `S` / `W` : s'endormir / se réveiller (provisoire, en attendant le wake word).
 - `1`–`9`, `0` : comme le dessin de référence — neutre, mort, méchant, tournis, joie, fatigue, amour, rire, clin d'œil, dormir. `F11`/`F12` : réflexion, surprise.
 - `U` : forcer une vérification de mise à jour (PC de dev).
+- `I` : aperçu de l'icône de mise à jour, avec/sans (PC de dev, sans NAS).
 
 ## Mises à jour (Velopack + NAS)
 

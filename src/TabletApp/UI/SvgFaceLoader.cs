@@ -109,14 +109,21 @@ internal static class SvgFaceLoader
     private static readonly Dictionary<string, PartLayer> Parts = new();
     private static readonly Dictionary<(FacePart, RobotExpression), ulong> PartHashes = new();
 
+    // Les scénarios de test tournent en parallèle : tout accès aux caches
+    // passe par ce verrou (Monitor réentrant, les chargements s'imbriquent).
+    private static readonly object CacheLock = new();
+
     public static FaceLayers For(RobotExpression expression)
     {
-        if (!Cache.TryGetValue(expression, out FaceLayers? layers))
+        lock (CacheLock)
         {
-            layers = Load(expression);
-            Cache[expression] = layers;
+            if (!Cache.TryGetValue(expression, out FaceLayers? layers))
+            {
+                layers = Load(expression);
+                Cache[expression] = layers;
+            }
+            return layers;
         }
-        return layers;
     }
 
     /// <summary>
@@ -210,9 +217,13 @@ internal static class SvgFaceLoader
     private static ulong PartHash(FacePart part, RobotExpression expression)
     {
         var key = (part, expression);
-        if (PartHashes.TryGetValue(key, out ulong hash))
+        ulong hash;
+        lock (CacheLock)
         {
-            return hash;
+            if (PartHashes.TryGetValue(key, out hash))
+            {
+                return hash;
+            }
         }
         var face = For(expression);
         SKPicture picture = part switch
@@ -238,8 +249,11 @@ internal static class SvgFaceLoader
                 hash *= 1099511628211ul;
             }
         }
-        PartHashes[key] = hash;
-        return hash;
+        lock (CacheLock)
+        {
+            PartHashes[key] = hash;
+            return hash;
+        }
     }
 
     private static SKBitmap RenderSmall(SKPicture picture)
@@ -270,21 +284,24 @@ internal static class SvgFaceLoader
 
     private static PartLayer Part(string file, string layer)
     {
-        if (Parts.TryGetValue(file, out PartLayer? part))
+        lock (CacheLock)
         {
+            if (Parts.TryGetValue(file, out PartLayer? part))
+            {
+                return part;
+            }
+            string resource = "TabletApp.Faces.Parts." + file;
+            using Stream? stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resource)
+                ?? throw new FileNotFoundException(
+                    $"Ressource SVG introuvable : {resource} (docs/faces/parts/{file} non embarquée ?).");
+            var doc = XDocument.Load(stream);
+            GuardGroups(doc, file);
+            var svg = LoadGroups(doc, layer, file);
+            float pivotY = CentroidY(svg.Picture!, file, layer);
+            part = new PartLayer { Svg = svg, PivotY = pivotY };
+            Parts[file] = part;
             return part;
         }
-        string resource = "TabletApp.Faces.Parts." + file;
-        using Stream? stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resource)
-            ?? throw new FileNotFoundException(
-                $"Ressource SVG introuvable : {resource} (docs/faces/parts/{file} non embarquée ?).");
-        var doc = XDocument.Load(stream);
-        GuardGroups(doc, file);
-        var svg = LoadGroups(doc, layer, file);
-        float pivotY = CentroidY(svg.Picture!, file, layer);
-        part = new PartLayer { Svg = svg, PivotY = pivotY };
-        Parts[file] = part;
-        return part;
     }
 
     private static void GuardGroups(XDocument doc, string file)

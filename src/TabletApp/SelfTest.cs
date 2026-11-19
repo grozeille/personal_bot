@@ -694,7 +694,7 @@ internal static class SelfTest
     private static bool ProbeIconFrames(List<string> log)
     {
         // Pulsation multi-frames (plusieurs rendus distincts au repos),
-        // anneau réactif (0 / 0,5 / 1 distincts), icône absente sans maj.
+        // grossissement réactif (0 / 0,5 / 1 distincts), icône absente sans maj.
         var pulses = Enumerable.Range(0, 8)
             .Select(i => Convert.ToHexString(RenderUpdateBytes(i * 0.25, 0, available: true)))
             .Distinct().Count();
@@ -712,7 +712,7 @@ internal static class SelfTest
         SaveProbeFrame("hold", 0.49, 0.65);
 
         bool ok = pulseOk && ringOk && gatedOk;
-        log.Add($"Probe/Icon: {pulses}/8 frames pulsées distinctes, anneau 0/50/100 " +
+        log.Add($"Probe/Icon: {pulses}/8 frames pulsées distinctes, appui 0/50/100 " +
             $"distinct={ringOk}, masquée sans maj={gatedOk} -> {(ok ? "OK" : "KO")}");
         return ok;
     }
