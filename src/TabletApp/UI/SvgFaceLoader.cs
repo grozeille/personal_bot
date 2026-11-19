@@ -7,43 +7,107 @@ using Svg.Skia;
 namespace TabletApp.UI;
 
 /// <summary>
-/// Charge les visages SVG embarqués (docs/faces, un par émotion) et les
-/// découpe en 2 calques (groupes id="eyes*"/id="mouth*") mis en cache pour le
-/// rendu 60 FPS. Mesure aussi les pivots (centre vertical des yeux/bouche)
-/// depuis le rendu réel, pour survivre aux retouches de mise en page.
+/// Charge la bibliothèque de parties SVG embarquées
+/// (<c>docs/faces/parts</c> : œil gauche, œil droit, bouche — voir
+/// <c>docs/faces/README.md</c>) et compose chaque émotion à partir de ces
+/// éléments réutilisables partagés. Deux visages utilisant la même partie
+/// partagent exactement le même <see cref="SKPicture"/> : l'équivalence est
+/// structurelle, la transition est sautée sans comparaison.
+/// Mesure aussi les pivots (centre vertical de chaque partie) depuis le rendu.
 /// Échec rapide et explicite si un fichier ou un groupe manque.
 /// Les SKSvg sont conservés en cache avec leurs SKPicture (durée de vie = app).
 /// </summary>
 internal static class SvgFaceLoader
 {
-    // Noms de fichiers (autre LLM) -> nos émotions.
-    private static readonly Dictionary<RobotExpression, string> Files = new()
+    internal enum EyeVariant
     {
-        [RobotExpression.Neutral] = "01-happy.svg",
-        [RobotExpression.Dead] = "02-dead.svg",
-        [RobotExpression.Mean] = "03-angry.svg",
-        [RobotExpression.Dizzy] = "04-excited.svg",
-        [RobotExpression.Happy] = "05-surprised.svg",
-        [RobotExpression.Tired] = "06-bored.svg",
-        [RobotExpression.Love] = "07-love.svg",
-        [RobotExpression.Laugh] = "08-joyful.svg",
-        [RobotExpression.Wink] = "09-wink.svg",
-        [RobotExpression.Sleep] = "10-sleepy.svg",
-        [RobotExpression.Thinking] = "11-thinking.svg",
-        [RobotExpression.Shocked] = "12-shocked.svg",
+        Oval,
+        BigOval,
+        X,
+        Blade,
+        Chevron,
+        Dome,
+        Heart,
+        ArcUp,
+        ArcDown,
+    }
+
+    internal enum MouthVariant
+    {
+        Smile,
+        Flat,
+        OpenD,
+        BigOpen,
+        Slant,
+        Ring,
+    }
+
+    // Composition de chaque émotion : (œil gauche, œil droit, bouche).
+    // Même variante = même fichier = pixels identiques, transition sautée.
+    private static readonly Dictionary<RobotExpression, (EyeVariant Left, EyeVariant Right, MouthVariant Mouth)> Composition = new()
+    {
+        [RobotExpression.Neutral] = (EyeVariant.Oval, EyeVariant.Oval, MouthVariant.Smile),
+        [RobotExpression.Dead] = (EyeVariant.X, EyeVariant.X, MouthVariant.Flat),
+        [RobotExpression.Mean] = (EyeVariant.Blade, EyeVariant.Blade, MouthVariant.Smile),
+        [RobotExpression.Dizzy] = (EyeVariant.Chevron, EyeVariant.Chevron, MouthVariant.Smile),
+        [RobotExpression.Happy] = (EyeVariant.Oval, EyeVariant.Oval, MouthVariant.OpenD),
+        [RobotExpression.Tired] = (EyeVariant.Dome, EyeVariant.Dome, MouthVariant.Flat),
+        [RobotExpression.Love] = (EyeVariant.Heart, EyeVariant.Heart, MouthVariant.Smile),
+        [RobotExpression.Laugh] = (EyeVariant.ArcUp, EyeVariant.ArcUp, MouthVariant.BigOpen),
+        [RobotExpression.Wink] = (EyeVariant.Oval, EyeVariant.Chevron, MouthVariant.Smile),
+        [RobotExpression.Sleep] = (EyeVariant.ArcDown, EyeVariant.ArcDown, MouthVariant.Flat),
+        [RobotExpression.Thinking] = (EyeVariant.Oval, EyeVariant.Oval, MouthVariant.Slant),
+        [RobotExpression.Shocked] = (EyeVariant.BigOval, EyeVariant.BigOval, MouthVariant.Ring),
     };
+
+    private static string EyeFile(string side, EyeVariant variant) => variant switch
+    {
+        EyeVariant.Oval => $"eye-{side}-oval.svg",
+        EyeVariant.BigOval => $"eye-{side}-big-oval.svg",
+        EyeVariant.X => $"eye-{side}-x.svg",
+        EyeVariant.Blade => $"eye-{side}-blade.svg",
+        EyeVariant.Chevron => $"eye-{side}-chevron.svg",
+        EyeVariant.Dome => $"eye-{side}-dome.svg",
+        EyeVariant.Heart => $"eye-{side}-heart.svg",
+        EyeVariant.ArcUp => $"eye-{side}-arc-up.svg",
+        EyeVariant.ArcDown => $"eye-{side}-arc-down.svg",
+        _ => throw new ArgumentOutOfRangeException(nameof(variant)),
+    };
+
+    private static string MouthFile(MouthVariant variant) => variant switch
+    {
+        MouthVariant.Smile => "mouth-smile.svg",
+        MouthVariant.Flat => "mouth-flat.svg",
+        MouthVariant.OpenD => "mouth-open-d.svg",
+        MouthVariant.BigOpen => "mouth-big-open.svg",
+        MouthVariant.Slant => "mouth-slant.svg",
+        MouthVariant.Ring => "mouth-ring.svg",
+        _ => throw new ArgumentOutOfRangeException(nameof(variant)),
+    };
+
+    internal sealed class PartLayer
+    {
+        public required SKSvg Svg;
+        public required float PivotY;
+        public SKPicture Picture => Svg.Picture!;
+    }
 
     internal sealed class FaceLayers
     {
-        public required SKSvg EyesSvg;
-        public required SKSvg MouthSvg;
-        public required float EyePivotY;
-        public required float MouthPivotY;
-        public SKPicture Eyes => EyesSvg.Picture!;
-        public SKPicture Mouth => MouthSvg.Picture!;
+        public required PartLayer Left;
+        public required PartLayer Right;
+        public required PartLayer MouthPart;
+        public SKPicture EyesLeft => Left.Picture;
+        public SKPicture EyesRight => Right.Picture;
+        public SKPicture Mouth => MouthPart.Picture;
+        public float LeftPivotY => Left.PivotY;
+        public float RightPivotY => Right.PivotY;
+        public float MouthPivotY => MouthPart.PivotY;
     }
 
     private static readonly Dictionary<RobotExpression, FaceLayers> Cache = new();
+    private static readonly Dictionary<string, PartLayer> Parts = new();
+    private static readonly Dictionary<(FacePart, RobotExpression), ulong> PartHashes = new();
 
     public static FaceLayers For(RobotExpression expression)
     {
@@ -55,31 +119,172 @@ internal static class SvgFaceLoader
         return layers;
     }
 
+    /// <summary>
+    /// Vrai si la partie peut sauter la transition : même variante partagée
+    /// (même fichier, pixels identiques par construction), vérifiée au pixel
+    /// en garde-fou.
+    /// </summary>
+    internal static bool PartsMatch(FacePart part, RobotExpression a, RobotExpression b)
+    {
+        if (a == b)
+        {
+            return true;
+        }
+        if (!Equals(VariantOf(part, a), VariantOf(part, b)))
+        {
+            return false;
+        }
+        return PixelsMatch(part, a, b);
+    }
+
+    /// <summary>
+    /// Paires partageant une variante, pour le self-test (qui vérifie que le
+    /// partage tient vraiment au pixel).
+    /// </summary>
+    internal static IEnumerable<(FacePart Part, RobotExpression A, RobotExpression B)> DeclaredPairs()
+    {
+        foreach (FacePart part in new[] { FacePart.LeftEye, FacePart.RightEye, FacePart.Mouth })
+        {
+            var groups = Composition.Keys
+                .GroupBy(e => VariantOf(part, e))
+                .Where(g => g.Count() > 1);
+            foreach (var group in groups)
+            {
+                RobotExpression[] shared = group.ToArray();
+                for (int i = 1; i < shared.Length; i++)
+                {
+                    yield return (part, shared[0], shared[i]);
+                }
+            }
+        }
+    }
+
+    internal static bool PixelsMatch(FacePart part, RobotExpression a, RobotExpression b) =>
+        PartHash(part, a) == PartHash(part, b);
+
+    internal static (float cx, float cy) PartCentroid(FacePart part, RobotExpression expression)
+    {
+        var face = For(expression);
+        SKPicture picture = part switch
+        {
+            FacePart.LeftEye => face.EyesLeft,
+            FacePart.RightEye => face.EyesRight,
+            _ => face.Mouth,
+        };
+        using var bitmap = RenderSmall(picture);
+        double sx = 0;
+        double sy = 0;
+        int n = 0;
+        for (int x = 0; x < bitmap.Width; x++)
+        {
+            for (int y = 0; y < bitmap.Height; y++)
+            {
+                SKColor p = bitmap.GetPixel(x, y);
+                if ((p.Red + p.Green + p.Blue) / 3 < 40)
+                {
+                    continue;
+                }
+                sx += x;
+                sy += y;
+                n++;
+            }
+        }
+        if (n == 0)
+        {
+            return (0, 0);
+        }
+        return ((float)(sx / n / 0.25), (float)(sy / n / 0.25));
+    }
+
+    private static object VariantOf(FacePart part, RobotExpression expression)
+    {
+        var composition = Composition[expression];
+        return part switch
+        {
+            FacePart.LeftEye => composition.Left,
+            FacePart.RightEye => composition.Right,
+            _ => composition.Mouth,
+        };
+    }
+
+    private static ulong PartHash(FacePart part, RobotExpression expression)
+    {
+        var key = (part, expression);
+        if (PartHashes.TryGetValue(key, out ulong hash))
+        {
+            return hash;
+        }
+        var face = For(expression);
+        SKPicture picture = part switch
+        {
+            FacePart.LeftEye => face.EyesLeft,
+            FacePart.RightEye => face.EyesRight,
+            _ => face.Mouth,
+        };
+        using var bitmap = RenderSmall(picture);
+        hash = 1469598103934665603ul;
+        for (int x = 0; x < bitmap.Width; x++)
+        {
+            for (int y = 0; y < bitmap.Height; y++)
+            {
+                SKColor p = bitmap.GetPixel(x, y);
+                hash ^= p.Red;
+                hash *= 1099511628211ul;
+                hash ^= p.Green;
+                hash *= 1099511628211ul;
+                hash ^= p.Blue;
+                hash *= 1099511628211ul;
+                hash ^= p.Alpha;
+                hash *= 1099511628211ul;
+            }
+        }
+        PartHashes[key] = hash;
+        return hash;
+    }
+
+    private static SKBitmap RenderSmall(SKPicture picture)
+    {
+        var bitmap = new SKBitmap(200, 138);
+        using var canvas = new SKCanvas(bitmap);
+        canvas.Clear(SKColors.Black);
+        canvas.Scale(0.25f);
+        canvas.DrawPicture(picture);
+        return bitmap;
+    }
+
     private static FaceLayers Load(RobotExpression expression)
     {
-        string file = Files[expression];
-        string resource = "TabletApp.Faces." + file;
-        using Stream? stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resource)
-            ?? throw new FileNotFoundException(
-                $"Ressource SVG introuvable : {resource} (docs/faces/{file} non embarquée ?).");
-        var doc = XDocument.Load(stream);
-        GuardGroups(doc, file);
-        var eyes = LoadGroups(doc, "eyes", file);
-        var mouth = LoadGroups(doc, "mouth", file);
-        float eyeY = CentroidY(eyes.Picture!, file, "eyes");
-        float mouthY = CentroidY(mouth.Picture!, file, "mouth");
-        if (eyeY is < 150 or > 400 || mouthY is < 250 or > 500 || mouthY <= eyeY)
+        var composition = Composition[expression];
+        PartLayer left = Part(EyeFile("left", composition.Left), "eyes");
+        PartLayer right = Part(EyeFile("right", composition.Right), "eyes");
+        PartLayer mouth = Part(MouthFile(composition.Mouth), "mouth");
+        if (left.PivotY is < 150 or > 400 || right.PivotY is < 150 or > 400
+            || mouth.PivotY is < 250 or > 500 || mouth.PivotY <= Math.Max(left.PivotY, right.PivotY))
         {
             throw new InvalidDataException(
-                $"Géométrie inattendue dans {file} (yeux y={eyeY:F0}, bouche y={mouthY:F0}).");
+                $"Géométrie inattendue pour {expression} " +
+                $"(yeux y={left.PivotY:F0}/{right.PivotY:F0}, bouche y={mouth.PivotY:F0}).");
         }
-        return new FaceLayers
+        return new FaceLayers { Left = left, Right = right, MouthPart = mouth };
+    }
+
+    private static PartLayer Part(string file, string layer)
+    {
+        if (Parts.TryGetValue(file, out PartLayer? part))
         {
-            EyesSvg = eyes,
-            MouthSvg = mouth,
-            EyePivotY = eyeY,
-            MouthPivotY = mouthY,
-        };
+            return part;
+        }
+        string resource = "TabletApp.Faces.Parts." + file;
+        using Stream? stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resource)
+            ?? throw new FileNotFoundException(
+                $"Ressource SVG introuvable : {resource} (docs/faces/parts/{file} non embarquée ?).");
+        var doc = XDocument.Load(stream);
+        GuardGroups(doc, file);
+        var svg = LoadGroups(doc, layer, file);
+        float pivotY = CentroidY(svg.Picture!, file, layer);
+        part = new PartLayer { Svg = svg, PivotY = pivotY };
+        Parts[file] = part;
+        return part;
     }
 
     private static void GuardGroups(XDocument doc, string file)

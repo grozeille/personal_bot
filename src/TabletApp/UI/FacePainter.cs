@@ -8,12 +8,21 @@ namespace TabletApp.UI;
 /// </summary>
 internal sealed record MouthOverride(RobotExpression Expression, double Openness);
 
+internal enum FacePart
+{
+    LeftEye,
+    RightEye,
+    Mouth,
+}
+
 /// <summary>
 /// Dessin du visage à partir des SVG embarqués (docs/faces, un par émotion),
-/// découpés en 2 calques (yeux/bouche) pour l'animation : clignement (squash
-/// vertical des yeux), regard (translation, bouche en parallaxe), bâillement.
-/// Changements d'expression instantanés (pas de transition).
-/// Le glow est ajouté au rendu (flou, coupable par `enableGlow`), les SVG restent plats.
+/// découpés en 3 parties (œil gauche, œil droit, bouche) pour l'animation :
+/// clignement (squash vertical des yeux), regard (translation, bouche en
+/// parallaxe), bâillement, et transition par squash-swap-stretch (~300 ms) :
+/// chaque partie s'aplatit, bascule sur la nouvelle forme, se redéploie.
+/// Les parties déclarées identiques ne bougent pas.
+/// Le glow est ajouté au rendu (flou), les SVG restent plats.
 /// Règle : seuls neutral et happy clignent ; le sommeil ferme tous les yeux.
 /// </summary>
 internal static class FacePainter
@@ -26,7 +35,7 @@ internal static class FacePainter
         SKCanvas canvas, int width, int height,
         double openAmount, double gazeX, double gazeY,
         double yawn, double timeSeconds,
-        RobotExpression expression,
+        RobotExpression expression, RobotExpression previous, double progress,
         MouthOverride? mouthOverride = null, bool awake = true, bool enableGlow = true)
     {
         canvas.Clear(SKColors.Black);
@@ -49,19 +58,40 @@ internal static class FacePainter
             : null;
         using (glowPaint)
         {
+            bool settled = progress >= 1.0 || previous == expression;
+            var old = settled ? null : SvgFaceLoader.For(previous);
             SKPicture mouthPic = mouthOverride is null
                 ? face.Mouth
                 : SvgFaceLoader.For(mouthOverride.Expression).Mouth;
             float mouthSY = (float)(mouthOverride?.Openness ?? 1.0);
+            RobotExpression mouthExpr = mouthOverride?.Expression ?? expression;
             float mouthPivotY = mouthOverride is null
                 ? face.MouthPivotY
                 : SvgFaceLoader.For(mouthOverride.Expression).MouthPivotY;
 
-            DrawLayer(canvas, mouthPic, ox, oy, scale,
-                ex * mouthParallax, ey * mouthParallax, 1f, mouthSY,
-                FaceCenterX, mouthPivotY, glowPaint);
-            DrawLayer(canvas, face.Eyes, ox, oy, scale,
-                ex, ey, squeeze, squash, FaceCenterX, face.EyePivotY, glowPaint);
+            float prevGaze = LooksAround(previous) ? 1f : 0f;
+            float nextGaze = LooksAround(expression) ? 1f : 0f;
+            float mouthNextGaze = LooksAround(mouthExpr) ? 1f : 0f;
+
+            DrawMorphPart(canvas, mouthPic, old?.Mouth,
+                settled || SvgFaceLoader.PartsMatch(FacePart.Mouth, previous, mouthExpr),
+                ox, oy, scale,
+                ex * mouthParallax * mouthNextGaze, ey * mouthParallax * mouthNextGaze,
+                ex * mouthParallax * prevGaze, ey * mouthParallax * prevGaze,
+                1f, mouthSY, FaceCenterX, mouthPivotY,
+                old?.MouthPivotY ?? mouthPivotY, progress, glowPaint);
+            DrawMorphPart(canvas, face.EyesLeft, old?.EyesLeft,
+                settled || SvgFaceLoader.PartsMatch(FacePart.LeftEye, previous, expression),
+                ox, oy, scale,
+                ex * nextGaze, ey * nextGaze, ex * prevGaze, ey * prevGaze,
+                squeeze, squash, 250f, face.LeftPivotY,
+                old?.LeftPivotY ?? face.LeftPivotY, progress, glowPaint);
+            DrawMorphPart(canvas, face.EyesRight, old?.EyesRight,
+                settled || SvgFaceLoader.PartsMatch(FacePart.RightEye, previous, expression),
+                ox, oy, scale,
+                ex * nextGaze, ey * nextGaze, ex * prevGaze, ey * prevGaze,
+                squeeze, squash, 550f, face.RightPivotY,
+                old?.RightPivotY ?? face.RightPivotY, progress, glowPaint);
         }
     }
 
@@ -72,7 +102,56 @@ internal static class FacePainter
         _ => false,
     };
 
-    private static void DrawLayer(SKCanvas canvas, SKPicture picture,
+    internal static bool LooksAround(RobotExpression expression) => expression switch
+    {
+        RobotExpression.Dead => false,
+        RobotExpression.Dizzy => false,
+        RobotExpression.Tired => false,
+        RobotExpression.Wink => false,
+        RobotExpression.Sleep => false,
+        _ => true,
+    };
+
+
+    private static void DrawMorphPart(SKCanvas canvas,
+        SKPicture picNew, SKPicture? picOld, bool same,
+        float ox, float oy, float scale,
+        float tx, float ty, float txOld, float tyOld, float sx, float syBase,
+        float pivotX, float pivotY, float pivotOldY, double progress, SKPaint? glowPaint)
+    {
+        if (same || picOld is null)
+        {
+            DrawInstance(canvas, picNew, ox, oy, scale, tx, ty, sx, syBase,
+                pivotX, pivotY, glowPaint);
+            return;
+        }
+        if (progress < 0.5)
+        {
+            double s = 1.0 - Smooth(progress * 2);
+            if (s > 0.01)
+            {
+                DrawInstance(canvas, picOld, ox, oy, scale, txOld, tyOld, sx, (float)(syBase * s),
+                    pivotX, pivotOldY, glowPaint);
+            }
+        }
+        else
+        {
+            double s = Smooth((progress - 0.5) * 2);
+            if (s > 0.01)
+            {
+                DrawInstance(canvas, picNew, ox, oy, scale, tx, ty, sx, (float)(syBase * s),
+                    pivotX, pivotY, glowPaint);
+            }
+        }
+    }
+
+    private static double Smooth(double t)
+    {
+        t = Math.Clamp(t, 0, 1);
+        return t * t * (3 - 2 * t);
+    }
+
+    private static void DrawInstance(SKCanvas canvas, SKPicture picture,
         float ox, float oy, float scale,
         float tx, float ty, float sx, float sy,
         float pivotX, float pivotY, SKPaint? glowPaint)

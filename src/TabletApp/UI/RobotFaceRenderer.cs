@@ -10,8 +10,8 @@ namespace TabletApp.UI;
 /// pilote le dessin (<see cref="FacePainter"/>) avec le clignement
 /// (<see cref="BlinkController"/>), le regard de surveillance
 /// (<see cref="GazeController"/>), les expressions
-/// (<see cref="ExpressionController"/>, changement instantané) et le cycle
-/// de sommeil (<see cref="SleepController"/>).
+/// (<see cref="ExpressionController"/>, squash-swap-stretch) et le cycle de
+/// sommeil (<see cref="SleepController"/>).
 /// </summary>
 internal sealed class RobotFaceRenderer : UserControl
 {
@@ -46,10 +46,10 @@ internal sealed class RobotFaceRenderer : UserControl
     public void WakeUp() => _sleep.WakeUp(_clock.Elapsed);
 
     public void SetExpression(RobotExpression expression) =>
-        _expression.SetExpression(expression);
+        _expression.SetExpression(expression, _clock.Elapsed);
 
     public void SetEmotion(string emotion) =>
-        _expression.SetEmotion(emotion);
+        _expression.SetEmotion(emotion, _clock.Elapsed);
 
     private void OnPaintSurface(object? sender, SKPaintSurfaceEventArgs e)
     {
@@ -59,18 +59,19 @@ internal sealed class RobotFaceRenderer : UserControl
         {
             if (_sleep.Current == SleepController.State.Yawning)
             {
-                _expression.SetExpression(RobotExpression.Tired);
+                _expression.SetExpression(RobotExpression.Tired, now);
             }
             else if (_sleep.Current == SleepController.State.Asleep)
             {
-                _expression.SetExpression(RobotExpression.Sleep);
+                _expression.SetExpression(RobotExpression.Sleep, now);
             }
             else if (_sleep.Current == SleepController.State.Waking)
             {
-                _expression.SetExpression(RobotExpression.Neutral);
+                _expression.SetExpression(RobotExpression.Neutral, now);
             }
             _prevSleep = _sleep.Current;
         }
+        _expression.Update(now);
 
         double open;
         MouthOverride? mouthOverride = null;
@@ -100,7 +101,8 @@ internal sealed class RobotFaceRenderer : UserControl
         FacePainter.DrawFace(
             e.Surface.Canvas, e.Info.Width, e.Info.Height,
             open, _gaze.X, _gaze.Y, _sleep.Yawn, now.TotalSeconds,
-            _expression.Current, mouthOverride, _sleep.IsAwake);
+            _expression.Current, _expression.Previous, _expression.Progress,
+            mouthOverride, _sleep.IsAwake);
     }
 
     private void UpdateFps(TimeSpan now)

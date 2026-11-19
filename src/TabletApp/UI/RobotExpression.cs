@@ -21,24 +21,53 @@ internal enum RobotExpression
 }
 
 /// <summary>
-/// Pilote l'expression courante (changement instantané, sans transition).
+/// Pilote l'expression courante + transition par squash-swap-stretch
+/// (chaque partie s'aplatit, bascule, se redéploie — voir FacePainter).
+/// Logique pure (temps injecté) pour être testable sans UI.
 /// </summary>
 internal sealed class ExpressionController
 {
-    public RobotExpression Current { get; private set; } = RobotExpression.Neutral;
+    private static readonly TimeSpan TransitionDuration = TimeSpan.FromMilliseconds(300);
 
-    public void SetExpression(RobotExpression expression)
+    private TimeSpan _transitionStartedAt;
+
+    public RobotExpression Current { get; private set; } = RobotExpression.Neutral;
+    public RobotExpression Previous { get; private set; } = RobotExpression.Neutral;
+
+    /// <summary>Progression 0..1 (1 = repos, aucune transition).</summary>
+    public double Progress { get; private set; } = 1.0;
+
+    public bool Transitioning => Progress < 1.0;
+
+    public void SetExpression(RobotExpression expression, TimeSpan now)
     {
+        if (expression == Current)
+        {
+            return;
+        }
+        Previous = Current;
         Current = expression;
+        _transitionStartedAt = now;
+        Progress = 0.0;
     }
 
-    public void SetEmotion(string emotion)
+    public void SetEmotion(string emotion, TimeSpan now)
     {
         if (TryParse(emotion, out RobotExpression expression))
         {
-            SetExpression(expression);
+            SetExpression(expression, now);
         }
         // Émotion inconnue : ignorée (robustesse face aux typos du LLM).
+    }
+
+    public void Update(TimeSpan now)
+    {
+        if (Progress >= 1.0)
+        {
+            return;
+        }
+        Progress = Math.Min(1.0,
+            (now - _transitionStartedAt).TotalMilliseconds / TransitionDuration.TotalMilliseconds);
     }
 
     private static bool TryParse(string emotion, out RobotExpression expression)

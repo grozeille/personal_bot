@@ -1,4 +1,4 @@
-# Rapport de tests BDD — 2026-11-18 21:39
+# Rapport de tests BDD — 2026-11-18 22:28
 
 *20 scénarios : 20 OK, 0 KO.*
 

@@ -7,6 +7,8 @@ Fonctionnalité: Expressions du visage
     Quand on affiche l'expression "<emotion>"
     Et 2 secondes s'écoulent
     Alors l'expression affichée est "<emotion>"
+    Et la transition est terminée
+    Et la transition est terminée
 
     Exemples:
       | emotion |

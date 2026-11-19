@@ -49,7 +49,7 @@ Schéma d'assemblage (tablette + Pan/Tilt/Roll + PCA9685 + Pi + alim 5V + base b
 
 Référence visuelle (2 rangées de 5, couleur `#79D7E3`) : [docs/reference-faces.jfif](docs/reference-faces.jfif).
 
-1. **Yeux lumineux sans pupilles + bouche systématique, changement instantané (transitions retirées : ni scale ni fondu ne rendaient bien) :**
+1. **Yeux lumineux sans pupilles + bouche systématique, transition squash-swap-stretch (~300 ms par partie : la forme s'aplatit, bascule, se redéploie — sans transition si identique) :**
    - `neutral` : Deux ovales verticaux + petit sourire. **Cligne des yeux.**
    - `dead` : Yeux en croix `X X` + bouche plate (quand il "fait le mort" pour rire).
    - `mean` : Lames pleines en biais (épais en haut/extérieur, pointe en bas/intérieur) + petit sourire espiègle (faux méchant pour jouer).
@@ -60,11 +60,13 @@ Référence visuelle (2 rangées de 5, couleur `#79D7E3`) : [docs/reference-face
    - `wink` : Un ovale + un œil en chevron + sourire (clin d'œil complice, ne cligne pas).
    - `sleep` : Yeux fermés en U + bouche plate (expression dormir, éveillé).
    - `tired` : Dômes pleins (paupières lourdes) + bouche plate (fatigue).
-   - `thinking` : Regard vers le haut à gauche + bouche en biais (réflexion).
+   - `thinking` : Mêmes yeux que `neutral` + bouche en biais (réflexion).
    - `shocked` : Yeux dilatés + bouche en O (surprise totale).
    - Touches `1`–`9`, `0` : même ordre que le dessin — neutre, mort, méchant, tournis, joie, fatigue, amour, rire, clin d'œil, dormir. `F11`/`F12` : réflexion, surprise.
    - Seuls `neutral` et `happy` clignent ; le sommeil (bâillement/dodo/réveil) ferme tous les yeux.
-   - Sources : `docs/faces/*.svg` (un fichier par émotion, groupes `eyes`/`mouth`, voir `docs/faces/README.md`), rendus via Svg.Skia en 2 calques animés (squash/translation des yeux, bouche en parallaxe) + glow SkiaSharp au rendu.
+   - Sources : `docs/faces/parts/*.svg` (bibliothèque de 24 parties canoniques réutilisables : 9 yeux gauches, 9 yeux droits, 6 bouches, voir `docs/faces/README.md`), composées en 3 calques animés + glow SkiaSharp au rendu. Les `docs/faces/*.svg` restent la référence d'auteur.
+   - Équivalences déclarées (pas d'animation entre elles) : œil gauche {neutral, happy, wink, thinking}, œil droit {neutral, happy, thinking} et {dizzy, wink}, bouche {neutral, mean, dizzy, love, wink} et {dead, tired, sleep}.
+   - Regard fixe (pas de surveillance) pour `dead`, `dizzy`, `tired`, `wink`, `sleep` (yeux non ouverts).
 
 #### Sous-étape 1C : Réveil vocal (*Wake Word*) & Conversation Gemini Live
 
