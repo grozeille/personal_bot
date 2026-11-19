@@ -72,7 +72,7 @@ internal sealed class ExpressionController
             (now - _transitionStartedAt).TotalMilliseconds / TransitionDuration.TotalMilliseconds);
     }
 
-    private static bool TryParse(string emotion, out RobotExpression expression)
+    internal static bool TryParse(string emotion, out RobotExpression expression)
     {
         RobotExpression? parsed = emotion.Trim().ToLowerInvariant() switch
         {

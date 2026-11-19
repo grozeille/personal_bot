@@ -34,6 +34,22 @@ internal sealed class RobotFaceRenderer : UserControl
     /// <summary>Maj disponible : affiche l'icône en haut à droite.</summary>
     public bool UpdateAvailable { get; set; }
 
+    /// <summary>Parole en cours : bouche grande ouverte (rire). Mis par MainForm.</summary>
+    public bool Speaking { get; set; }
+
+    /// <summary>Concentration (discussion) : regard recentré figé, sans clignement.</summary>
+    public bool Concentrated { get; set; }
+
+    /// <summary>Halo voix : fixe en écoute, pulsé en réflexion.</summary>
+    public VoiceGlow Glow { get; set; }
+
+    private bool _wasSpeaking;
+    private TimeSpan? _speakEdgeAt;
+    private bool _wasConcentrated;
+    private double _calmX;
+    private double _calmY;
+    private TimeSpan _prevFrameAt = TimeSpan.MinValue;
+
     /// <summary>Expression affichée (pour restaurer après la confirmation).</summary>
     public RobotExpression CurrentExpression => _expression.Current;
 
@@ -95,6 +111,14 @@ internal sealed class RobotFaceRenderer : UserControl
     private void OnPaintSurface(object? sender, SKPaintSurfaceEventArgs e)
     {
         TimeSpan now = _clock.Elapsed;
+        double frameDt = _prevFrameAt == TimeSpan.MinValue
+            ? 0 : (now - _prevFrameAt).TotalSeconds;
+        _prevFrameAt = now;
+        if (Speaking != _wasSpeaking)
+        {
+            _speakEdgeAt = now;
+            _wasSpeaking = Speaking;
+        }
         _sleep.Update(now);
         if (_sleep.IsAwake)
         {
@@ -126,12 +150,33 @@ internal sealed class RobotFaceRenderer : UserControl
         _expression.Update(now);
 
         double open;
+        double gazeX = _gaze.X;
+        double gazeY = _gaze.Y;
         MouthOverride? mouthOverride = null;
         if (_sleep.IsAwake)
         {
-            _blink.Update(now);
-            _gaze.Update(now);
-            open = FacePainter.Blinks(_expression.Current) ? _blink.OpenAmount : 1.0;
+            if (Concentrated)
+            {
+                if (!_wasConcentrated)
+                {
+                    _calmX = _gaze.X;
+                    _calmY = _gaze.Y;
+                    _wasConcentrated = true;
+                }
+                (_calmX, _calmY) = EaseGaze(_calmX, _calmY, frameDt);
+                gazeX = _calmX;
+                gazeY = _calmY;
+                open = 1.0;
+            }
+            else
+            {
+                _wasConcentrated = false;
+                _blink.Update(now);
+                _gaze.Update(now);
+                gazeX = _gaze.X;
+                gazeY = _gaze.Y;
+                open = FacePainter.Blinks(_expression.Current) ? _blink.OpenAmount : 1.0;
+            }
         }
         else if (_sleep.Current == SleepController.State.Waking)
         {
@@ -148,14 +193,41 @@ internal sealed class RobotFaceRenderer : UserControl
         {
             open = 1.0;
         }
+        if (mouthOverride is null && _sleep.IsAwake)
+        {
+            // Squash de la bouche de parole (150 ms comme les transitions).
+            double speakT = _speakEdgeAt is null
+                ? 1.0
+                : Math.Min(1.0, (now - _speakEdgeAt.Value).TotalMilliseconds / 150.0);
+            if (Speaking)
+            {
+                mouthOverride = new MouthOverride(RobotExpression.Laugh, SpeakEase(speakT));
+            }
+            else if (speakT < 1.0)
+            {
+                mouthOverride = new MouthOverride(RobotExpression.Laugh, SpeakEase(1.0 - speakT));
+            }
+        }
         UpdateFps(now);
 
         FacePainter.DrawFace(
             e.Surface.Canvas, e.Info.Width, e.Info.Height,
-            open, _gaze.X, _gaze.Y, _sleep.Yawn, now.TotalSeconds,
+            open, gazeX, gazeY, _sleep.Yawn, now.TotalSeconds,
             _expression.Current, _expression.Previous, _expression.Progress,
             mouthOverride, _sleep.IsAwake,
-            updateAvailable: UpdateAvailable);
+            updateAvailable: UpdateAvailable, glow: Glow);
+    }
+
+    private static float SpeakEase(double t)
+    {
+        t = Math.Clamp(t, 0, 1);
+        return (float)Math.Max(0.02, t * t * (3 - 2 * t));
+    }
+
+    internal static (double X, double Y) EaseGaze(double x, double y, double dtSeconds)
+    {
+        double k = Math.Min(1, Math.Max(0, dtSeconds) * 6);
+        return (x + (0 - x) * k, y + (0 - y) * k);
     }
 
     private void UpdateFps(TimeSpan now)

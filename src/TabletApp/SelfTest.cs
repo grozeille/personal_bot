@@ -1,6 +1,7 @@
 using System.Drawing;
 using System.Runtime.InteropServices;
 using SkiaSharp;
+using TabletApp.AI;
 using TabletApp.UI;
 using TabletApp.Update;
 using Velopack;
@@ -49,12 +50,15 @@ internal static class SelfTest
         var log = new List<string>();
         bool ok = CheckBlink(log) & CheckGaze(log) & CheckSleep(log)
             & CheckExpression(log) & CheckBlinkGating(log) & CheckFaceComplete(log)
-            & CheckSteadyYawn(log) & CheckFaceEquivalence(log) & CheckIdleSleep(log);
+            & CheckSteadyYawn(log) & CheckFaceEquivalence(log) & CheckIdleSleep(log)
+            & CheckGeminiVoice(log) & CheckSpeakingMouth(log) & CheckVoiceActivity(log)
+            & CheckGeminiBrain(log) & CheckVoiceGlow(log);
         RenderFrames(log);
         RenderExpressionSheet(log);
         RenderTransitionFrame(log);
         RenderUpdateFrame(log);
         RenderConfirmFrame(log);
+        RenderGlowFrame(log);
         log.Add(ok ? "SELF-TEST: PASS" : "SELF-TEST: FAIL");
         foreach (string line in log)
         {
@@ -408,6 +412,132 @@ internal static class SelfTest
         return ok;
     }
 
+    private static bool CheckGeminiVoice(List<string> log)
+    {
+        // #5 : parsers TTS/STT sur JSON figés (doc Interactions), sans réseau.
+        byte[] wav = GeminiSpeech.ParseAudioResponse(
+            "{\"steps\":[{\"type\":\"model_output\",\"content\":[{\"type\":\"audio\",\"data\":\"UklGRg==\"}]}]}");
+        bool audioOk = wav.SequenceEqual(new byte[] { 0x52, 0x49, 0x46, 0x46 });
+        bool audioKo;
+        try
+        {
+            GeminiSpeech.ParseAudioResponse("{\"steps\":[]}");
+            audioKo = false;
+        }
+        catch (InvalidDataException)
+        {
+            audioKo = true;
+        }
+        string? text = GeminiSpeech.ParseTextResponse(
+            "{\"steps\":[{\"type\":\"model_output\",\"content\":[{\"type\":\"text\",\"text\":\"Bonjour !\"}]}]}");
+        bool textOk = text == "Bonjour !";
+        bool textNull = GeminiSpeech.ParseTextResponse("{\"steps\":[]}") is null;
+        bool matchOk = VoiceTest.HearsBonjour("Bonjour !") && VoiceTest.HearsBonjour("bonjour")
+            && VoiceTest.HearsBonjour("Ah bonjour.")
+            && !VoiceTest.HearsBonjour("salut")
+            && !VoiceTest.HearsBonjour("") && !VoiceTest.HearsBonjour(null);
+        bool storeOk;
+        string tmp = Path.Combine(Path.GetTempPath(), "tabletapp-keystore-test.json");
+        try
+        {
+            File.WriteAllText(tmp, "{\"Autre:Cle\": \"x\"}");
+            GeminiKey.StoreApiKey(tmp, "cle-test-123");
+            string stored = File.ReadAllText(tmp);
+            storeOk = GeminiKey.ReadFlatKey(tmp) == "cle-test-123" && stored.Contains("Autre:Cle");
+        }
+        finally
+        {
+            File.Delete(tmp);
+        }
+        bool ok = audioOk && audioKo && textOk && textNull && matchOk && storeOk;
+        log.Add($"GeminiVoice: audio={audioOk && audioKo}, texte={textOk && textNull}, " +
+            $"bonjour={matchOk}, coffre={storeOk} -> {(ok ? "OK" : "KO")}");
+        return ok;
+    }
+
+    private static bool CheckSpeakingMouth(List<string> log)
+    {
+        // Parole : la bouche grande ouverte (rire) remplace la bouche du visage.
+        byte[] plain = RenderBytes(RobotExpression.Neutral, 1.0, awake: true);
+        byte[] talking = RenderBytes(RobotExpression.Neutral, 1.0, awake: true,
+            mouthOverride: new MouthOverride(RobotExpression.Laugh, 1.0));
+        byte[] half = RenderBytes(RobotExpression.Neutral, 1.0, awake: true,
+            mouthOverride: new MouthOverride(RobotExpression.Laugh, 0.5));
+        bool ok = !plain.SequenceEqual(talking)
+            && !plain.SequenceEqual(half)
+            && !half.SequenceEqual(talking);
+        log.Add($"SpeakingMouth: bouche parole distincte={ok} -> {(ok ? "OK" : "KO")}");
+        return ok;
+    }
+
+    private static bool CheckVoiceActivity(List<string> log)
+    {
+        // VAD : silence = 0, pleine échelle = 32767.
+        byte[] silence = new byte[320];
+        byte[] maxed = new byte[320];
+        for (int i = 0; i < maxed.Length; i += 2)
+        {
+            maxed[i] = 0xFF;
+            maxed[i + 1] = 0x7F;
+        }
+        double rmsSilence = NAudioVoice.ComputeRms(silence, silence.Length);
+        double rmsMax = NAudioVoice.ComputeRms(maxed, maxed.Length);
+        bool ok = rmsSilence == 0 && rmsMax == 32767;
+        log.Add($"VoiceActivity: silence={rmsSilence:F0}, max={rmsMax:F0} -> {(ok ? "OK" : "KO")}");
+        return ok;
+    }
+
+    private static bool CheckGeminiBrain(List<string> log)
+    {
+        // #5 : penseur sur textes figés, sans réseau (JSON strict + replis).
+        bool fullOk = GeminiBrain.ParseThinkReply(
+                "{\"reply\": \"Salut !\", \"emotion\": \"happy\"}") == ("Salut !", "happy");
+        bool wrappedOk = GeminiBrain.ParseThinkReply(
+                "Voici : {\"reply\": \"Coucou.\", \"emotion\": \"love\"} !") == ("Coucou.", "love");
+        bool bareOk = GeminiBrain.ParseThinkReply("Juste du texte.")
+            == ("Juste du texte.", null);
+        bool noEmotionOk = GeminiBrain.ParseThinkReply("{\"reply\": \"Yo.\"}")
+            == ("Yo.", null);
+        bool emptyOk = GeminiBrain.ParseThinkReply("   ") == (null, null)
+            && GeminiBrain.ParseThinkReply(null) == (null, null);
+        string input = GeminiBrain.BuildInput(
+            new List<(string Child, string Patate)> { ("a", "b") }, "coucou");
+        bool inputOk = input.Contains("Enfant : coucou") && input.Contains("Patate : b");
+        bool ok = fullOk && wrappedOk && bareOk && noEmotionOk && emptyOk && inputOk;
+        log.Add($"GeminiBrain: réponse={fullOk && wrappedOk && bareOk && noEmotionOk && emptyOk}, " +
+            $"entrée={inputOk} -> {(ok ? "OK" : "KO")}");
+        return ok;
+    }
+
+    private static bool CheckVoiceGlow(List<string> log)
+    {
+        // Halo voix : absent/écoute distincts, réflexion pulsée, regard recentré.
+        byte[] none = GlowBytes(VoiceGlow.None, 0);
+        byte[] listen = GlowBytes(VoiceGlow.Listening, 0);
+        byte[] think0 = GlowBytes(VoiceGlow.Thinking, 0);
+        byte[] thinkQuarter = GlowBytes(VoiceGlow.Thinking, 0.25);
+        (double ex, double ey) = RobotFaceRenderer.EaseGaze(1, -1, 10);
+        (double sx, double sy) = RobotFaceRenderer.EaseGaze(1, 1, 0);
+        bool ok = !none.SequenceEqual(listen)
+            && !think0.SequenceEqual(thinkQuarter)
+            && ex == 0 && ey == 0 && sx == 1 && sy == 1;
+        log.Add($"VoiceGlow: halo pulsé={ok} -> {(ok ? "OK" : "KO")}");
+        return ok;
+    }
+
+    private static byte[] GlowBytes(VoiceGlow glow, double time)
+    {
+        using var bitmap = new SKBitmap(400, 300);
+        using var canvas = new SKCanvas(bitmap);
+        FacePainter.DrawFace(
+            canvas, 400, 300, 1.0, 0, 0, 0, time,
+            RobotExpression.Neutral, RobotExpression.Neutral, 1.0,
+            updateAvailable: false, glow: glow);
+        using var image = SKImage.FromBitmap(bitmap);
+        using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+        return data.ToArray();
+    }
+
     private static SKBitmap RenderBitmap(
         RobotExpression expression, double open, bool awake,
         MouthOverride? mouthOverride = null, double yawn = 0.0, double timeSeconds = 0.0,
@@ -491,6 +621,23 @@ internal static class SelfTest
         using var stream = File.OpenWrite(path);
         data.SaveTo(stream);
         log.Add($"Frame 'confirm' -> {path}");
+    }
+
+    private static void RenderGlowFrame(List<string> log)
+    {
+        // Halo voix autour de l'écran (ici : réflexion à mi-pulsation).
+        using var bitmap = new SKBitmap(800, 600);
+        using var canvas = new SKCanvas(bitmap);
+        FacePainter.DrawFace(
+            canvas, 800, 600, 1.0, 0, 0, 0, 0.25,
+            RobotExpression.Neutral, RobotExpression.Neutral, 1.0, awake: true,
+            updateAvailable: false, glow: VoiceGlow.Thinking);
+        using var image = SKImage.FromBitmap(bitmap);
+        using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+        string path = Path.Combine(Path.GetTempPath(), "tabletapp-frame-glow.png");
+        using var stream = File.OpenWrite(path);
+        data.SaveTo(stream);
+        log.Add($"Frame 'glow' -> {path}");
     }
 
     /// <summary>

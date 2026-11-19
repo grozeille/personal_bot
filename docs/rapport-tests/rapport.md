@@ -1,6 +1,6 @@
-# Rapport de tests BDD — 2026-11-18 23:29
+# Rapport de tests BDD — 2026-11-19 16:45
 
-*28 scénarios : 28 OK, 0 KO.*
+*32 scénarios : 32 OK, 0 KO.*
 
 ## Clignement des yeux — Clignement régulier sur 30 secondes — OK
 
@@ -93,4 +93,12 @@
 ## Regard de surveillance — Saccades régulières sur 30 secondes — OK
 
 ![Saccades régulières sur 30 secondes](Regard_de_surveillance_Saccades_régulières_sur_30_secondes_1.png)
+
+## Test voix — Bonjour entendu affiche le cœur — OK
+
+## Test voix — Discussion avec émotions puis adieux sur silences — OK
+
+## Test voix — Émotion inconnue ignorée en discussion — OK
+
+## Test voix — Salut entendu n'affiche pas le cœur — OK
 

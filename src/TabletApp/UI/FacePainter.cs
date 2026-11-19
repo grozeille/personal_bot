@@ -3,8 +3,8 @@ using SkiaSharp;
 namespace TabletApp.UI;
 
 /// <summary>
-/// Forçage de bouche : utilisé pendant le sommeil (bâillement = bouche en O
-/// qui grandit, réveil = bouche plate gardée jusqu'au bout).
+/// Forçage de bouche : sommeil (bâillement = bouche en O qui grandit,
+/// réveil = bouche plate gardée) et parole (bouche grande ouverte).
 /// </summary>
 internal sealed record MouthOverride(RobotExpression Expression, double Openness);
 
@@ -13,6 +13,14 @@ internal enum FacePart
     LeftEye,
     RightEye,
     Mouth,
+}
+
+/// <summary>Halo voix autour de l'écran : fixe en écoute, pulsé en réflexion.</summary>
+internal enum VoiceGlow
+{
+    None,
+    Listening,
+    Thinking,
 }
 
 /// <summary>
@@ -49,7 +57,7 @@ internal static class FacePainter
         double yawn, double timeSeconds,
         RobotExpression expression, RobotExpression previous, double progress,
         MouthOverride? mouthOverride = null, bool awake = true, bool enableGlow = true,
-        bool updateAvailable = false)
+        bool updateAvailable = false, VoiceGlow glow = VoiceGlow.None)
     {
         canvas.Clear(SKColors.Black);
         var face = SvgFaceLoader.For(expression);
@@ -111,7 +119,31 @@ internal static class FacePainter
                 float size = Math.Min(width, height) * 0.09f;
                 UpdateIcon.Draw(canvas, width - 14, 14, size, timeSeconds);
             }
+            if (glow != VoiceGlow.None)
+            {
+                DrawGlow(canvas, width, height, glow, timeSeconds);
+            }
         }
+    }
+
+    private static void DrawGlow(SKCanvas canvas, int width, int height, VoiceGlow glow, double timeSeconds)
+    {
+        // Halo seul, sans trait : fixe en écoute, respirant (taille) à 1 Hz en réflexion.
+        float margin = Math.Min(width, height) * 0.02f;
+        double breathe = glow == VoiceGlow.Thinking
+            ? 0.5 + 0.5 * Math.Sin(timeSeconds * 2 * Math.PI)
+            : 0.5;
+        float stroke = Math.Max(6, Math.Min(width, height) * 0.02f) * (float)(0.7 + 0.6 * breathe);
+        using var halo = new SKPaint
+        {
+            Style = SKPaintStyle.Stroke,
+            StrokeWidth = stroke,
+            Color = new SKColor(142, 220, 233, 150),
+            IsAntialias = true,
+            MaskFilter = SKMaskFilter.CreateBlur(SKBlurStyle.Normal, 18f),
+        };
+        canvas.DrawRoundRect(
+            new SKRect(margin, margin, width - margin, height - margin), 24, 24, halo);
     }
 
     internal static bool Blinks(RobotExpression expression) => expression switch

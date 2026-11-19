@@ -1,6 +1,7 @@
 using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
+using TabletApp.AI;
 using TabletApp.UI;
 using TabletApp.Update;
 
@@ -31,6 +32,9 @@ internal sealed class MainForm : Form
     private readonly TapMessageFilter _tapFilter;
     private bool _applying;
     private bool _iconPreview;
+    private bool _voiceRunning;
+    private bool _chatRunning;
+    private CancellationTokenSource? _chatCts;
 
     // Empêche la mise en veille de l'écran / du système (tête de robot allumée en continu).
     [DllImport("kernel32.dll")]
@@ -109,6 +113,14 @@ internal sealed class MainForm : Form
                 _iconPreview = !_iconPreview;
                 UpdateFaceIcon();
             }
+            else if (e.KeyCode == Keys.T)
+            {
+                _ = RunVoiceTestAsync();
+            }
+            else if (e.KeyCode == Keys.D)
+            {
+                ToggleConversation();
+            }
             else if (Digit(e.KeyCode) is { } digit)
             {
                 _confirm.Cancel();
@@ -134,7 +146,19 @@ internal sealed class MainForm : Form
         Application.AddMessageFilter(_tapFilter);
 
         // Premier contrôle peu après le démarrage (silencieux si NAS hors-ligne).
-        Shown += (_, _) => _ = CheckForUpdatesAsync();
+        Shown += (_, _) =>
+        {
+            _ = CheckForUpdatesAsync();
+            PromptApiKeyIfMissing();
+            if (Program.AutoVoiceTest)
+            {
+                _ = RunVoiceTestAsync();
+            }
+            if (Program.AutoDiscuss)
+            {
+                _ = RunConversationAsync();
+            }
+        };
     }
 
     protected override void OnShown(EventArgs e)
@@ -193,6 +217,39 @@ internal sealed class MainForm : Form
     private void UpdateFaceIcon() =>
         _face.UpdateAvailable = _updater.UpdateAvailable || _iconPreview;
 
+    /// <summary>
+    /// Première installation : demande la clé Gemini si absente et la stocke.
+    /// Ne bloque jamais le démarrage (annuler = continuer sans voix).
+    /// </summary>
+    private void PromptApiKeyIfMissing()
+    {
+        try
+        {
+            if (GeminiKey.Resolve() is not null)
+            {
+                return;
+            }
+            Cursor.Show();
+            try
+            {
+                using var dialog = new ApiKeyDialog();
+                if (dialog.ShowDialog(this) == DialogResult.OK
+                    && !string.IsNullOrWhiteSpace(dialog.ApiKey))
+                {
+                    GeminiKey.StoreApiKey(GeminiKey.SecretsPath(), dialog.ApiKey);
+                }
+            }
+            finally
+            {
+                Cursor.Hide();
+            }
+        }
+        catch
+        {
+            // Dialogue impossible : l'app démarre quand même.
+        }
+    }
+
     private async Task DownloadAndApplyAsync()
     {
         _applying = true;
@@ -203,6 +260,149 @@ internal sealed class MainForm : Form
         // Échec = la maj reste proposée.
         UpdateFaceIcon();
         _applying = false;
+    }
+
+    /// <summary>
+    /// Test voix #5 (touche T, flag --voice-test) : dit bonjour (TTS Gemini),
+    /// écoute 10 s (STT Gemini), visage cœur si « bonjour » entendu. Visage
+    /// mort 2 s si échec (clé, micro, réseau). Tourne sur le thread UI.
+    /// </summary>
+    private async Task RunVoiceTestAsync()
+    {
+        if (_voiceRunning || _chatRunning)
+        {
+            return;
+        }
+        _voiceRunning = true;
+        _face.Concentrated = true;
+        RobotExpression previous = _face.CurrentExpression;
+        try
+        {
+            string key = GeminiKey.Resolve()
+                ?? throw new InvalidOperationException("Clé Gemini manquante.");
+            var speech = new GeminiSpeech(key);
+            var test = new VoiceTest(
+                (text, ct) => SpeakAsync(speech, text, ct),
+                (duration, ct) => ListenAsync(speech, duration, ct),
+                expr => _face.SetExpression(expr));
+            string? heard = await test.RunAsync(previous, CancellationToken.None);
+            VoiceLog.Info(VoiceTest.HearsBonjour(heard) ? "Bonjour détecté → cœur." : "Pas de bonjour.");
+        }
+        catch (Exception ex)
+        {
+            VoiceLog.Error(ex.Message);
+            _face.SetExpression(RobotExpression.Dead);
+            await Task.Delay(TimeSpan.FromSeconds(2));
+            _face.SetExpression(previous);
+        }
+        finally
+        {
+            _face.Concentrated = false;
+            _voiceRunning = false;
+        }
+    }
+
+    private void ToggleConversation()
+    {
+        if (_chatRunning && _chatCts is not null)
+        {
+            _chatCts.Cancel();
+            return;
+        }
+        if (_chatRunning || _voiceRunning)
+        {
+            return;
+        }
+        _ = RunConversationAsync();
+    }
+
+    /// <summary>
+    /// Discussion libre (touche D, flag --discuter) : salutations, boucle
+    /// écoute → pense → répond avec émotion, adieux après 2 silences ou D.
+    /// </summary>
+    private async Task RunConversationAsync()
+    {
+        _chatRunning = true;
+        _chatCts = new CancellationTokenSource();
+        _confirm.Cancel();
+        _face.Concentrated = true;
+        RobotExpression previous = _face.CurrentExpression;
+        try
+        {
+            string key = GeminiKey.Resolve()
+                ?? throw new InvalidOperationException("Clé Gemini manquante.");
+            var speech = new GeminiSpeech(key);
+            var brain = new GeminiBrain(key);
+            var chat = new Conversation(
+                (duration, ct) => ListenAsync(speech, duration, ct),
+                async (history, heard, ct) =>
+                {
+                    _face.SetExpression(RobotExpression.Thinking);
+                    _face.Glow = VoiceGlow.Thinking;
+                    _face.NotifyActivity();
+                    var thought = await brain.ThinkAsync(history, heard, ct);
+                    VoiceLog.Info($"Pense : '{thought.Reply ?? "(rien)"}' + {thought.Emotion ?? "(neutre)"}.");
+                    return thought;
+                },
+                (text, ct) => SpeakAsync(speech, text, ct),
+                expr => _face.SetExpression(expr));
+            await chat.RunAsync(previous, _chatCts.Token);
+        }
+        catch (Exception ex)
+        {
+            VoiceLog.Error(ex.Message);
+            _face.SetExpression(RobotExpression.Dead);
+            await Task.Delay(TimeSpan.FromSeconds(2));
+            _face.SetExpression(previous);
+        }
+        finally
+        {
+            _face.Concentrated = false;
+            _chatRunning = false;
+            _chatCts?.Dispose();
+            _chatCts = null;
+        }
+    }
+
+    private async Task SpeakAsync(GeminiSpeech speech, string text, CancellationToken ct)
+    {
+        VoiceLog.Info($"Robot : {text}");
+        _face.Glow = VoiceGlow.None;
+        byte[] wav = await speech.SpeakAsync(text, ct);
+        _face.Speaking = true;
+        try
+        {
+            await NAudioVoice.PlayAsync(wav, ct);
+        }
+        finally
+        {
+            _face.Speaking = false;
+        }
+    }
+
+    private async Task<string?> ListenAsync(GeminiSpeech speech, TimeSpan duration, CancellationToken ct)
+    {
+        _face.Glow = VoiceGlow.Listening;
+        try
+        {
+            // Laisse mourir l'écho de notre propre voix avant d'enregistrer.
+            await Task.Delay(400, ct);
+            VoiceClip clip = await NAudioVoice.RecordAsync(duration, ct);
+            VoiceLog.Info($"Écoute : {clip.RecordedFor.TotalSeconds:F1} s, " +
+                $"parole={(clip.HadSpeech ? "oui" : "non")}, RMS max {clip.PeakRms:F0}.");
+            if (!clip.HadSpeech)
+            {
+                return null;
+            }
+            _face.Glow = VoiceGlow.Thinking;
+            string? heard = await speech.TranscribeAsync(clip.Wav, ct);
+            VoiceLog.Info($"Entendu : '{heard ?? "(rien)"}'.");
+            return heard;
+        }
+        finally
+        {
+            _face.Glow = VoiceGlow.None;
+        }
     }
 
     private void OnTapDown()

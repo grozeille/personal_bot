@@ -1,0 +1,116 @@
+using System.Diagnostics;
+using NAudio.Wave;
+
+namespace TabletApp.AI;
+
+/// <summary>Extrait micro : WAV finalisé + détection de parole (VAD énergie).</summary>
+internal sealed record VoiceClip(byte[] Wav, bool HadSpeech, double PeakRms, TimeSpan RecordedFor);
+
+/// <summary>
+/// Entrées/sorties audio (NAudio, WinMM/WASAPI, compatible win-x86) :
+/// capture micro et lecture WAV pour le test voix.
+/// </summary>
+internal static class NAudioVoice
+{
+    // Parole vs bruit de fond (RMS sur échantillons 16 bits) + 1,2 s de
+    // silence après la parole pour couper l'écoute sans attendre le max.
+    private const double SpeechRms = 500.0;
+    private static readonly TimeSpan SilenceHang = TimeSpan.FromMilliseconds(1200);
+
+    /// <summary>
+    /// Enregistre le micro (16 kHz, mono, 16 bits) jusqu'au bout de
+    /// <paramref name="maxDuration"/> ou 1,2 s de silence après la parole.
+    /// </summary>
+    public static async Task<VoiceClip> RecordAsync(TimeSpan maxDuration, CancellationToken ct)
+    {
+        using var stream = new MemoryStream();
+        using var input = new WaveInEvent
+        {
+            WaveFormat = new WaveFormat(16000, 16, 1),
+        };
+        var writer = new WaveFileWriter(stream, input.WaveFormat);
+        object sync = new();
+        bool speech = false;
+        double peak = 0;
+        var watch = Stopwatch.StartNew();
+        TimeSpan lastSpeechAt = TimeSpan.Zero;
+        input.DataAvailable += (_, e) =>
+        {
+            writer.Write(e.Buffer, 0, e.BytesRecorded);
+            double rms = ComputeRms(e.Buffer, e.BytesRecorded);
+            lock (sync)
+            {
+                if (rms > peak)
+                {
+                    peak = rms;
+                }
+                if (rms >= SpeechRms)
+                {
+                    speech = true;
+                    lastSpeechAt = watch.Elapsed;
+                }
+            }
+        };
+        try
+        {
+            input.StartRecording();
+            while (true)
+            {
+                await Task.Delay(50, ct).ConfigureAwait(false);
+                lock (sync)
+                {
+                    if (watch.Elapsed >= maxDuration)
+                    {
+                        break;
+                    }
+                    if (speech && watch.Elapsed - lastSpeechAt >= SilenceHang)
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+        finally
+        {
+            input.StopRecording();
+            // Finalise l'en-tête WAV (ToArray reste lisible après).
+            writer.Dispose();
+        }
+        lock (sync)
+        {
+            return new VoiceClip(stream.ToArray(), speech, peak, watch.Elapsed);
+        }
+    }
+
+    /// <summary>Joue des octets WAV jusqu'au bout (ou annulation).</summary>
+    public static async Task PlayAsync(byte[] wav, CancellationToken ct)
+    {
+        using var stream = new MemoryStream(wav, writable: false);
+        using var reader = new WaveFileReader(stream);
+        using var output = new WaveOutEvent();
+        var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        output.PlaybackStopped += (_, _) => done.TrySetResult();
+        output.Init(reader);
+        output.Play();
+        using var registration = ct.Register(() => output.Stop());
+        await done.Task.ConfigureAwait(false);
+        ct.ThrowIfCancellationRequested();
+    }
+
+    /// <summary>Niveau RMS d'un buffer PCM 16 bits mono (0 = silence).</summary>
+    internal static double ComputeRms(byte[] buffer, int count)
+    {
+        int samples = count / 2;
+        if (samples == 0)
+        {
+            return 0;
+        }
+        double sum = 0;
+        for (int i = 0; i < samples; i++)
+        {
+            short sample = (short)(buffer[i * 2] | (buffer[i * 2 + 1] << 8));
+            sum += (double)sample * sample;
+        }
+        return Math.Sqrt(sum / samples);
+    }
+}

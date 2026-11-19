@@ -42,6 +42,8 @@ sur GitHub (pense à les committer). Tâche VS Code : "tests + rapport".
 - `1`–`9`, `0` : comme le dessin de référence — neutre, mort, méchant, tournis, joie, fatigue, amour, rire, clin d'œil, dormir. `F11`/`F12` : réflexion, surprise.
 - `U` : forcer une vérification de mise à jour (PC de dev).
 - `I` : aperçu de l'icône de mise à jour, avec/sans (PC de dev, sans NAS).
+- `T` : test voix #5 — dit « Bonjour, je m'appelle Patate ! » (TTS Gemini, bouche grande ouverte pendant la parole), écoute 10 s (STT Gemini), visage cœur 2 s si « bonjour » entendu (mort 2 s si échec : clé, micro, réseau). Idem une fois au démarrage avec `--voice-test`.
+- `D` : discussion libre (« Je t'écoute... », boucle écoute → pense → répond avec émotion en JSON {reply, emotion}, « Bye ! » après 2 silences ou `D`). Visage concentré (regard fixe, sans clignement) + halo : fixe en écoute, pulsé en réflexion. Idem au démarrage avec `--discuter`. Journal : console + `%TEMP%\tabletapp-voice.log`.
 
 ## Mises à jour (Velopack + NAS)
 
@@ -86,3 +88,12 @@ Le code lira la clé dans l'ordre : variable d'environnement → User Secrets �
 `appsettings.json` (câblé dans l'issue #5). Pour vérifier que le secret est
 enregistré (à faire toi-même, car la commande affiche la valeur en clair) :
 `dotnet user-secrets list`.
+
+**Sur la tablette** (sans SDK donc sans `dotnet user-secrets`) : au premier
+lancement sans clé, l'app affiche un dialogue de saisie tactile et stocke la
+clé au même endroit. Alternative en ligne de commande (persistant, redémarrer
+l'app ensuite) :
+
+```powershell
+[Environment]::SetEnvironmentVariable('GEMINI_API_KEY', 'TA_CLÉ', 'User')
+```
