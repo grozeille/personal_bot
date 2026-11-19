@@ -1,6 +1,6 @@
-# Rapport de tests BDD — 2026-11-18 20:14
+# Rapport de tests BDD — 2026-11-18 20:54
 
-*17 scénarios : 17 OK, 0 KO.*
+*19 scénarios : 19 OK, 0 KO.*
 
 ## Clignement des yeux — Clignement régulier sur 30 secondes — OK
 
@@ -42,9 +42,17 @@
 
 ![Toutes les expressions (neutral)](Expressions_du_visage_Toutes_les_expressions__neutral__1.png)
 
+## Expressions du visage — Toutes les expressions (shocked) — OK
+
+![Toutes les expressions (shocked)](Expressions_du_visage_Toutes_les_expressions__shocked__1.png)
+
 ## Expressions du visage — Toutes les expressions (sleep) — OK
 
 ![Toutes les expressions (sleep)](Expressions_du_visage_Toutes_les_expressions__sleep__1.png)
+
+## Expressions du visage — Toutes les expressions (thinking) — OK
+
+![Toutes les expressions (thinking)](Expressions_du_visage_Toutes_les_expressions__thinking__1.png)
 
 ## Expressions du visage — Toutes les expressions (tired) — OK
 

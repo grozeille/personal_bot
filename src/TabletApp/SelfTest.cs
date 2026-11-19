@@ -16,6 +16,7 @@ internal static class SelfTest
     private static readonly string[] EmotionNames =
     {
         "neutral", "dead", "mean", "dizzy", "happy", "tired", "love", "laugh", "wink", "sleep",
+        "thinking", "shocked",
     };
 
     private static readonly RobotExpression[] Emotions =
@@ -30,6 +31,8 @@ internal static class SelfTest
         RobotExpression.Laugh,
         RobotExpression.Wink,
         RobotExpression.Sleep,
+        RobotExpression.Thinking,
+        RobotExpression.Shocked,
     };
 
     [DllImport("kernel32.dll")]
@@ -40,9 +43,10 @@ internal static class SelfTest
         AttachConsole(-1); // ATTACH_PARENT_PROCESS : sortie dans le terminal appelant.
         var log = new List<string>();
         bool ok = CheckBlink(log) & CheckGaze(log) & CheckSleep(log)
-            & CheckExpression(log) & CheckBlinkGating(log);
+            & CheckExpression(log) & CheckBlinkGating(log) & CheckFaceComplete(log);
         RenderFrames(log);
         RenderExpressionSheet(log);
+        RenderTransitionFrame(log);
         log.Add(ok ? "SELF-TEST: PASS" : "SELF-TEST: FAIL");
         foreach (string line in log)
         {
@@ -135,11 +139,12 @@ internal static class SelfTest
         var end = TimeSpan.FromSeconds(20);
         sleep.FallAsleep(TimeSpan.FromSeconds(1));
         bool wakeSent = false;
-        double maxYawn = 0;
-        bool asleepStatic = true; // EyeOpen == 0 sur [5, 9]
+        var seen = new List<SleepController.State>();
+        SleepController.State last = SleepController.State.Awake;
+        double maxMouth = 0;
+        bool asleepShown = true; // visage affiché tel quel pendant [5, 9]
         double wakeMin = 1;
         double wakeMax = 0;
-        bool reachedAsleep = false;
         bool reachedAwakeAgain = false;
 
         while (now < end)
@@ -150,34 +155,42 @@ internal static class SelfTest
                 wakeSent = true;
             }
             sleep.Update(now);
-            if (sleep.Current == SleepController.State.Asleep)
+            if (sleep.Current != last)
             {
-                reachedAsleep = true;
-            }
-            if (wakeSent && sleep.Current == SleepController.State.Awake)
-            {
-                reachedAwakeAgain = true;
+                seen.Add(sleep.Current);
+                last = sleep.Current;
             }
             if (sleep.Current == SleepController.State.Yawning)
             {
-                maxYawn = Math.Max(maxYawn, sleep.Yawn);
+                maxMouth = Math.Max(maxMouth, sleep.MouthOpen);
             }
-            if (now >= TimeSpan.FromSeconds(5) && now < TimeSpan.FromSeconds(9) && sleep.EyeOpen != 0)
+            if (now >= TimeSpan.FromSeconds(5) && now < TimeSpan.FromSeconds(9) && sleep.EyeOpen != 1.0)
             {
-                asleepStatic = false;
+                asleepShown = false;
             }
             if (sleep.Current == SleepController.State.Waking)
             {
                 wakeMin = Math.Min(wakeMin, sleep.EyeOpen);
                 wakeMax = Math.Max(wakeMax, sleep.EyeOpen);
             }
+            if (wakeSent && sleep.Current == SleepController.State.Awake)
+            {
+                reachedAwakeAgain = true;
+            }
             now += step;
         }
 
-        bool ok = reachedAsleep && reachedAwakeAgain && asleepStatic
-            && maxYawn > 0.5 && wakeMin < 0.3 && wakeMax > 0.6;
-        log.Add($"Sleep: endormi={reachedAsleep}, statique={asleepStatic}, " +
-            $"baillement max {maxYawn:F2}, réveil [{wakeMin:F2}-{wakeMax:F2}], " +
+        bool orderOk = seen.SequenceEqual(new[]
+        {
+            SleepController.State.Yawning,
+            SleepController.State.Asleep,
+            SleepController.State.Waking,
+            SleepController.State.Awake,
+        });
+        bool ok = orderOk && maxMouth > 0.9 && asleepShown
+            && wakeMin < 0.3 && wakeMax > 0.6 && reachedAwakeAgain;
+        log.Add($"Sleep: phases dans l'ordre={orderOk}, bouche max {maxMouth:F2}, " +
+            $"dodo affiché={asleepShown}, réveil [{wakeMin:F2}-{wakeMax:F2}], " +
             $"réveillé={reachedAwakeAgain} -> {(ok ? "OK" : "KO")}");
         return ok;
     }
@@ -188,28 +201,42 @@ internal static class SelfTest
         var step = TimeSpan.FromMilliseconds(16);
         var now = TimeSpan.Zero;
         bool ok = true;
+        RobotExpression prev = RobotExpression.Neutral;
 
         for (int i = 0; i < EmotionNames.Length; i++)
         {
+            bool changing = Emotions[i] != prev;
+            TimeSpan t0 = now;
             expression.SetEmotion(EmotionNames[i], now);
-            ok &= !expression.Transitioning; // changement instantané (transitions désactivées)
-            TimeSpan end = now + TimeSpan.FromSeconds(1);
-            while (now < end)
+            prev = Emotions[i];
+            ok &= expression.Transitioning == changing;
+            while (now < t0 + TimeSpan.FromMilliseconds(225))
             {
                 expression.Update(now);
                 now += step;
             }
-            bool match = expression.Current == Emotions[i]
+            ok &= !changing || (expression.Progress > 0.0 && expression.Progress < 1.0);
+            while (now < t0 + TimeSpan.FromSeconds(1))
+            {
+                expression.Update(now);
+                now += step;
+            }
+            ok &= expression.Current == Emotions[i]
                 && !expression.Transitioning
-                && expression.PopScale == 1.0;
-            ok &= match;
+                && expression.Progress == 1.0;
         }
 
         // Émotion inconnue : ignorée, l'expression courante est conservée.
         expression.SetEmotion("nimportequoi", now);
-        ok &= expression.Current == RobotExpression.Sleep;
+        ok &= expression.Current == RobotExpression.Shocked;
 
-        log.Add($"Expression: {EmotionNames.Length} émotions mappées, inconnue ignorée -> {(ok ? "OK" : "KO")}");
+        // À mi-transition, le rendu diffère des deux états stables.
+        byte[] mid = RenderBytes(RobotExpression.Happy, 1.0, true, RobotExpression.Neutral, 0.5);
+        ok &= !mid.SequenceEqual(RenderBytes(RobotExpression.Happy, 1.0, true, RobotExpression.Happy, 1.0));
+        ok &= !mid.SequenceEqual(RenderBytes(RobotExpression.Neutral, 1.0, true, RobotExpression.Neutral, 1.0));
+
+        log.Add($"Expression: {EmotionNames.Length} émotions mappées, inconnue ignorée, " +
+            $"mi-transition distincte -> {(ok ? "OK" : "KO")}");
         return ok;
     }
 
@@ -233,11 +260,55 @@ internal static class SelfTest
         return ok;
     }
 
-    private static byte[] RenderBytes(RobotExpression expression, double open, bool awake)
+    private static bool CheckFaceComplete(List<string> log)
     {
-        using var bitmap = new SKBitmap(400, 300);
+        // Gardien anti-régression : les deux moitiés du visage contiennent des
+        // pixels (un clip vide/supprimé ne doit plus passer inaperçu).
+        using var bitmap = RenderBitmap(RobotExpression.Neutral, 1.0, awake: true);
+        int left = 0;
+        int right = 0;
+        for (int x = 0; x < bitmap.Width; x += 2)
+        {
+            for (int y = 0; y < bitmap.Height; y += 2)
+            {
+                SKColor p = bitmap.GetPixel(x, y);
+                if ((p.Red + p.Green + p.Blue) / 3 < 40)
+                {
+                    continue;
+                }
+                if (x < bitmap.Width / 2)
+                {
+                    left++;
+                }
+                else
+                {
+                    right++;
+                }
+            }
+        }
+        bool ok = left > 100 && right > 100;
+        log.Add($"FaceComplete: gauche={left}, droite={right} -> {(ok ? "OK" : "KO")}");
+        return ok;
+    }
+
+    private static SKBitmap RenderBitmap(
+        RobotExpression expression, double open, bool awake,
+        RobotExpression? previous = null, double progress = 1.0,
+        MouthOverride? mouthOverride = null)
+    {
+        var bitmap = new SKBitmap(400, 300);
         using var canvas = new SKCanvas(bitmap);
-        FacePainter.DrawFace(canvas, 400, 300, open, 0, 0, 0, 0, expression, 1.0, awake);
+        FacePainter.DrawFace(canvas, 400, 300, open, 0, 0, 0, 0,
+            expression, previous ?? expression, progress, mouthOverride, awake);
+        return bitmap;
+    }
+
+    private static byte[] RenderBytes(
+        RobotExpression expression, double open, bool awake,
+        RobotExpression? previous = null, double progress = 1.0,
+        MouthOverride? mouthOverride = null)
+    {
+        using var bitmap = RenderBitmap(expression, open, awake, previous, progress, mouthOverride);
         using var image = SKImage.FromBitmap(bitmap);
         using var data = image.Encode(SKEncodedImageFormat.Png, 100);
         return data.ToArray();
@@ -245,23 +316,23 @@ internal static class SelfTest
 
     private static void RenderFrames(List<string> log)
     {
-        var frames = new (string Name, double Open, double GazeX, double Yawn, double Time, bool Awake)[]
+        var frames = new (string Name, RobotExpression Expr, double Open, double GazeX, double Yawn, double Time, bool Awake, MouthOverride? Mouth)[]
         {
-            ("neutre", 1.0, 0.0, 0.0, 0.0, true),
-            ("clin", 0.0, 0.0, 0.0, 0.0, true),
-            ("gauche", 1.0, -1.0, 0.0, 0.0, true),
-            ("droite", 1.0, 1.0, 0.0, 0.0, true),
-            ("baillement", 0.35, 0.0, 1.0, 0.5, false),
-            ("dodo", 0.0, 0.0, 0.0, 0.0, false),
-            ("reveil", 0.45, 0.0, 0.0, 0.0, false),
+            ("neutre", RobotExpression.Neutral, 1.0, 0.0, 0.0, 0.0, true, null),
+            ("clin", RobotExpression.Neutral, 0.0, 0.0, 0.0, 0.0, true, null),
+            ("gauche", RobotExpression.Neutral, 1.0, -1.0, 0.0, 0.0, true, null),
+            ("droite", RobotExpression.Neutral, 1.0, 1.0, 0.0, 0.0, true, null),
+            ("baillement", RobotExpression.Tired, 1.0, 0.0, 1.0, 0.5, false, new MouthOverride(RobotExpression.Shocked, 1.0)),
+            ("dodo", RobotExpression.Sleep, 1.0, 0.0, 0.0, 0.0, false, null),
+            ("reveil", RobotExpression.Neutral, 0.45, 0.0, 0.0, 0.0, false, new MouthOverride(RobotExpression.Sleep, 1.0)),
         };
-        foreach (var (name, open, gazeX, yawn, time, awake) in frames)
+        foreach (var (name, expr, open, gazeX, yawn, time, awake, mouth) in frames)
         {
             using var bitmap = new SKBitmap(800, 600);
             using var canvas = new SKCanvas(bitmap);
             FacePainter.DrawFace(
                 canvas, 800, 600, open, gazeX, 0, yawn, time,
-                RobotExpression.Neutral, 1.0, awake);
+                expr, expr, 1.0, mouth, awake);
             using var image = SKImage.FromBitmap(bitmap);
             using var data = image.Encode(SKEncodedImageFormat.Png, 100);
             string path = Path.Combine(Path.GetTempPath(), $"tabletapp-frame-{name}.png");
@@ -286,7 +357,8 @@ internal static class SelfTest
             using var cell = new SKBitmap(cellWidth, cellHeight);
             using var cellCanvas = new SKCanvas(cell);
             FacePainter.DrawFace(
-                cellCanvas, cellWidth, cellHeight, 1.0, 0, 0, 0, 0, Emotions[i], 1.0);
+                cellCanvas, cellWidth, cellHeight, 1.0, 0, 0, 0, 0,
+                Emotions[i], Emotions[i], 1.0);
             using var image = SKImage.FromBitmap(cell);
             canvas.DrawImage(image, (float)(i * cellWidth), 0f, SKSamplingOptions.Default);
             canvas.DrawText(
@@ -299,5 +371,50 @@ internal static class SelfTest
         using var stream = File.OpenWrite(path);
         data.SaveTo(stream);
         log.Add($"Planche expressions -> {path}");
+    }
+
+    private static void RenderTransitionFrame(List<string> log)
+    {
+        // Transition neutre -> joie à 25/50/75 % : la cascade mute chaque
+        // partie à son tour (œil gauche, puis droit, puis bouche).
+        foreach (double progress in new[] { 0.25, 0.5, 0.75 })
+        {
+            using var bitmap = new SKBitmap(800, 600);
+            using var canvas = new SKCanvas(bitmap);
+            FacePainter.DrawFace(canvas, 800, 600, 1.0, 0, 0, 0, 0,
+                RobotExpression.Happy, RobotExpression.Neutral, progress);
+            using var image = SKImage.FromBitmap(bitmap);
+            using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+            string path = Path.Combine(Path.GetTempPath(), $"tabletapp-frame-transition-{(int)(progress * 100)}.png");
+            using var stream = File.OpenWrite(path);
+            data.SaveTo(stream);
+            log.Add($"Frame transition ({progress:P0}) -> {path}");
+        }
+    }
+
+    /// <summary>
+    /// Diagnostic : rend une transition arbitraire (usage :
+    /// <c>dotnet run --project src/TabletApp -- --transition wink tired 0.5</c>).
+    /// </summary>
+    public static bool RenderCustomTransition(string from, string to, double progress)
+    {
+        AttachConsole(-1);
+        if (!Enum.TryParse<RobotExpression>(from, true, out RobotExpression f)
+            || !Enum.TryParse<RobotExpression>(to, true, out RobotExpression t))
+        {
+            Console.WriteLine($"Émotion inconnue : {from} / {to}");
+            return false;
+        }
+        using var bitmap = new SKBitmap(800, 600);
+        using var canvas = new SKCanvas(bitmap);
+        FacePainter.DrawFace(canvas, 800, 600, 1.0, 0, 0, 0, 0,
+            t, f, Math.Clamp(progress, 0, 1));
+        using var image = SKImage.FromBitmap(bitmap);
+        using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+        string path = Path.Combine(Path.GetTempPath(), "tabletapp-frame-custom.png");
+        using var stream = File.OpenWrite(path);
+        data.SaveTo(stream);
+        Console.WriteLine($"Frame -> {path}");
+        return true;
     }
 }

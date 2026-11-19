@@ -58,8 +58,8 @@ public sealed class ReportHooks
             FacePainter.DrawFace(
                 canvas, 800, 600, face.FinalOpen,
                 face.Gaze.X, face.Gaze.Y, face.Sleep.Yawn, face.Now.TotalSeconds,
-                face.Expression.Current, face.Expression.PopScale,
-                face.Sleep.IsAwake);
+                face.Expression.Current, face.Expression.Previous, face.Expression.Progress,
+                mouthOverride: null, awake: face.Sleep.IsAwake);
             using var image = SKImage.FromBitmap(bitmap);
             using var data = image.Encode(SKEncodedImageFormat.Png, 100);
             using var stream = File.OpenWrite(Path.Combine(_reportDir, file));

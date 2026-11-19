@@ -13,7 +13,6 @@ internal sealed class SimulatedFace
 
     private bool _wasBlinking;
     private double _settledGaze;
-    private readonly Queue<(TimeSpan At, double Open)> _sleepSamples = new();
 
     public BlinkController Blink { get; } = new(new Random(42));
     public GazeController Gaze { get; } = new(new Random(7));
@@ -32,10 +31,6 @@ internal sealed class SimulatedFace
 
     /// <summary>Ouverture des yeux à la fin de la simulation (pour la capture finale).</summary>
     public double FinalOpen { get; private set; } = 1;
-
-    /// <summary>Ouvertures des yeux sur les 2 dernières secondes simulées.</summary>
-    public IReadOnlyList<double> RecentSleepOpen =>
-        _sleepSamples.Select(s => s.Open).ToList();
 
     public void Advance(TimeSpan duration)
     {
@@ -90,11 +85,6 @@ internal sealed class SimulatedFace
 
     private void TrackSleep()
     {
-        _sleepSamples.Enqueue((Now, Sleep.EyeOpen));
-        while (_sleepSamples.Count > 0 && Now - _sleepSamples.Peek().At > TimeSpan.FromSeconds(2))
-        {
-            _sleepSamples.Dequeue();
-        }
         if (Sleep.Current == SleepController.State.Waking)
         {
             WakeMinOpen = Math.Min(WakeMinOpen, Sleep.EyeOpen);

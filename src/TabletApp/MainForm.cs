@@ -67,6 +67,14 @@ internal sealed class MainForm : Form
             {
                 _face.WakeUp();
             }
+            else if (e.KeyCode == Keys.F11)
+            {
+                _face.SetExpression(RobotExpression.Thinking);
+            }
+            else if (e.KeyCode == Keys.F12)
+            {
+                _face.SetExpression(RobotExpression.Shocked);
+            }
             else if (Digit(e.KeyCode) is { } digit)
             {
                 _face.SetExpression(ExpressionKeys[digit]);

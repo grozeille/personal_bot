@@ -77,12 +77,11 @@ public sealed class FaceSteps
             _face.MinGazeX < -0.9 && _face.MaxGazeX > 0.9,
             $"X dans [{_face.MinGazeX:F2}, {_face.MaxGazeX:F2}]");
 
-    [Then("les yeux sont fermés et immobiles")]
-    public void ThenFermesImmobiles()
+    [Then("le robot dort paisiblement")]
+    public void ThenDortPaisiblement()
     {
         Assert.Equal(SleepController.State.Asleep, _face.Sleep.Current);
-        Assert.NotEmpty(_face.RecentSleepOpen);
-        Assert.All(_face.RecentSleepOpen, o => Assert.Equal(0, o));
+        Assert.Equal(1.0, _face.Sleep.EyeOpen);
     }
 
     [Then("les paupières ont battu avant l'ouverture complète")]

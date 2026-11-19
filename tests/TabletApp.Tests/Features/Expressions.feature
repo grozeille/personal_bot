@@ -19,8 +19,10 @@ Fonctionnalité: Expressions du visage
       | tired   |
       | love    |
       | laugh   |
-      | wink    |
-      | sleep   |
+      | wink     |
+      | sleep    |
+      | thinking |
+      | shocked  |
 
   Scénario: Emotion inconnue ignorée
     Soit un visage éveillé

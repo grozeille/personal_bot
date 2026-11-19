@@ -6,7 +6,7 @@ Fonctionnalité: Cycle de sommeil
     Soit un visage éveillé
     Quand le robot s'endort
     Et 5 secondes s'écoulent
-    Alors les yeux sont fermés et immobiles
+    Alors le robot dort paisiblement
     Quand le robot se réveille
     Et 3 secondes s'écoulent
     Alors les paupières ont battu avant l'ouverture complète

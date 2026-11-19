@@ -16,38 +16,39 @@ internal enum RobotExpression
     Wink,
     Sleep,
     Tired,
+    Thinking,
+    Shocked,
 }
 
 /// <summary>
-/// Pilote l'expression courante. Transitions désactivées pour l'instant :
-/// changement instantané (remettre <c>TransitionsEnabled</c> à true pour le pop).
+/// Pilote l'expression courante + transition en cascade (chaque partie du
+/// visage mute à son tour, voir <c>FacePainter</c>).
 /// Logique pure (temps injecté) pour être testable sans UI.
 /// </summary>
 internal sealed class ExpressionController
 {
-    private static readonly bool TransitionsEnabled = false;
-    private static readonly TimeSpan TransitionDuration = TimeSpan.FromMilliseconds(300);
+    private static readonly TimeSpan TransitionDuration = TimeSpan.FromMilliseconds(450);
 
     private TimeSpan _transitionStartedAt;
-    private bool _transitioning;
 
     public RobotExpression Current { get; private set; } = RobotExpression.Neutral;
+    public RobotExpression Previous { get; private set; } = RobotExpression.Neutral;
 
-    /// <summary>1 = taille normale, creuse pendant la transition (effet de "pop").</summary>
-    public double PopScale { get; private set; } = 1.0;
+    /// <summary>Progression 0..1 (1 = repos, aucune transition).</summary>
+    public double Progress { get; private set; } = 1.0;
 
-    public bool Transitioning => _transitioning;
+    public bool Transitioning => Progress < 1.0;
 
     public void SetExpression(RobotExpression expression, TimeSpan now)
     {
+        if (expression == Current)
+        {
+            return;
+        }
+        Previous = Current;
         Current = expression;
         _transitionStartedAt = now;
-        _transitioning = TransitionsEnabled;
-        PopScale = 1.0;
-        if (_transitioning)
-        {
-            Update(now);
-        }
+        Progress = 0.0;
     }
 
     public void SetEmotion(string emotion, TimeSpan now)
@@ -61,20 +62,12 @@ internal sealed class ExpressionController
 
     public void Update(TimeSpan now)
     {
-        if (!_transitioning || !TransitionsEnabled)
+        if (Progress >= 1.0)
         {
-            _transitioning = false;
-            PopScale = 1.0;
             return;
         }
-        double p = Math.Min(1.0,
+        Progress = Math.Min(1.0,
             (now - _transitionStartedAt).TotalMilliseconds / TransitionDuration.TotalMilliseconds);
-        PopScale = 1.0 - 0.45 * Math.Sin(Math.PI * p);
-        if (p >= 1)
-        {
-            _transitioning = false;
-            PopScale = 1.0;
-        }
     }
 
     private static bool TryParse(string emotion, out RobotExpression expression)
@@ -91,6 +84,8 @@ internal sealed class ExpressionController
             "wink" => RobotExpression.Wink,
             "sleep" or "asleep" => RobotExpression.Sleep,
             "tired" or "sleepy" or "bored" => RobotExpression.Tired,
+            "thinking" or "think" => RobotExpression.Thinking,
+            "shocked" or "surprised" => RobotExpression.Shocked,
             _ => null,
         };
         if (parsed is null)

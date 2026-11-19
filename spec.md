@@ -49,7 +49,7 @@ Schéma d'assemblage (tablette + Pan/Tilt/Roll + PCA9685 + Pi + alim 5V + base b
 
 Référence visuelle (2 rangées de 5, couleur `#79D7E3`) : [docs/reference-faces.jfif](docs/reference-faces.jfif).
 
-1. **Yeux lumineux sans pupilles + bouche systématique, transition animée (pop 300 ms) :**
+1. **Yeux lumineux sans pupilles + bouche systématique, transition en cascade (~450 ms, œil gauche puis droit puis bouche) :**
    - `neutral` : Deux ovales verticaux + petit sourire. **Cligne des yeux.**
    - `dead` : Yeux en croix `X X` + bouche plate (quand il "fait le mort" pour rire).
    - `mean` : Lames pleines en biais (épais en haut/extérieur, pointe en bas/intérieur) + petit sourire espiègle (faux méchant pour jouer).
@@ -60,7 +60,9 @@ Référence visuelle (2 rangées de 5, couleur `#79D7E3`) : [docs/reference-face
    - `wink` : Un ovale + un œil en chevron + sourire (clin d'œil complice, ne cligne pas).
    - `sleep` : Yeux fermés en U + bouche plate (expression dormir, éveillé).
    - `tired` : Dômes pleins (paupières lourdes) + bouche plate (fatigue).
-   - Touches `1`–`9`, `0` : même ordre que le dessin — neutre, mort, méchant, tournis, joie, fatigue, amour, rire, clin d'œil, dormir.
+   - `thinking` : Regard vers le haut à gauche + bouche en biais (réflexion).
+   - `shocked` : Yeux dilatés + bouche en O (surprise totale).
+   - Touches `1`–`9`, `0` : même ordre que le dessin — neutre, mort, méchant, tournis, joie, fatigue, amour, rire, clin d'œil, dormir. `F11`/`F12` : réflexion, surprise.
    - Seuls `neutral` et `happy` clignent ; le sommeil (bâillement/dodo/réveil) ferme tous les yeux.
    - Sources : `docs/faces/*.svg` (un fichier par émotion, groupes `eyes`/`mouth`, voir `docs/faces/README.md`), rendus via Svg.Skia en 2 calques animés (squash/translation des yeux, bouche en parallaxe) + glow SkiaSharp au rendu.
 

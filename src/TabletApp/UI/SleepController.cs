@@ -1,10 +1,10 @@
 namespace TabletApp.UI;
 
 /// <summary>
-/// Cycle de sommeil : bâillement (~2,2 s, yeux qui se plissent en se fermant),
-/// sommeil statique (yeux fermés, aucune animation), réveil (~1,8 s,
-/// paupières qui battent avant de s'ouvrir en grand).
-/// Logique pure (temps injecté) pour être testable sans UI (--self-test).
+/// Cycle de sommeil : bâillement (la bouche s'ouvre en cloche pendant que le
+/// visage mute vers les yeux fatigués), sommeil (visage dormir affiché tel
+/// quel), réveil (battement des paupières sur yeux neutres, bouche plate
+/// gardée jusqu'au bout). Logique pure (temps injecté), testable sans UI.
 /// </summary>
 internal sealed class SleepController
 {
@@ -25,11 +25,14 @@ internal sealed class SleepController
     public State Current => _state;
     public bool IsAwake => _state == State.Awake;
 
-    /// <summary>0 = yeux fermés, 1 = yeux ouverts (pilote le rendu hors phase Awake).</summary>
+    /// <summary>1 = yeux ouverts (battement pendant le réveil uniquement).</summary>
     public double EyeOpen { get; private set; } = 1.0;
 
     /// <summary>0 = normal, 1 = plissement maximal du bâillement.</summary>
     public double Yawn { get; private set; }
+
+    /// <summary>Ouverture de la bouche en O : 0 -> 1 -> 0 sur le bâillement.</summary>
+    public double MouthOpen { get; private set; }
 
     public void FallAsleep(TimeSpan now)
     {
@@ -56,24 +59,28 @@ internal sealed class SleepController
             case State.Yawning:
             {
                 double p = PhaseProgress(now, YawnDuration);
-                Yawn = Math.Sin(Math.PI * p); // monte puis redescend
-                EyeOpen = 1.0 - Smooth(p); // se ferment
+                Yawn = Math.Sin(Math.PI * p);
+                EyeOpen = 1.0;
+                MouthOpen = Math.Sin(Math.PI * p);
                 if (p >= 1)
                 {
                     _state = State.Asleep;
                     Yawn = 0;
-                    EyeOpen = 0;
+                    MouthOpen = 0;
+                    EyeOpen = 1.0;
                 }
                 break;
             }
             case State.Asleep:
                 Yawn = 0;
-                EyeOpen = 0;
+                EyeOpen = 1.0;
+                MouthOpen = 0;
                 break;
             case State.Waking:
             {
                 double p = PhaseProgress(now, WakeDuration);
                 Yawn = 0;
+                MouthOpen = 0;
                 // 60 % : battements partiels ; 40 % : ouverture franche.
                 EyeOpen = p < 0.6
                     ? 0.45 * Math.Abs(Math.Sin(Math.PI * p / 0.6 * 2))
