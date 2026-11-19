@@ -21,6 +21,8 @@ Le système repose sur une architecture distribuée légère :
   - `Canal 2` — **Roll** (Inclinaison latérale « tête penchée ») : Servomoteur MG996R.
 - **Alimentation :** Bloc secteur AC-DC **5 V / 4 A** (20 W) avec condensateur tampon **1000 µF / 16 V** sur le bornier `V+` du PCA9685.
 
+Schéma d'assemblage (tablette + Pan/Tilt/Roll + PCA9685 + Pi + alim 5V + base bois) : [docs/assemblage-robot.jfif](docs/assemblage-robot.jfif).
+
 ### Stack Technique
 
 - **Application Tablette :** C# / **.NET 8** compilé en `win-x86` (`SelfContained = true`, `PublishSingleFile = true`).
@@ -43,16 +45,24 @@ Le système repose sur une architecture distribuée légère :
    - Fenêtre plein écran sans bordure sur fond noir pur (`#000000`) pour masquer les bordures de l'écran.
    - **Design épuré initial (façon Stack-Chan / EVE) :** Deux grands yeux géométriques lumineux (cyan/blanc) avec pupilles mobiles, un clignement automatique périodique naturel et une légère pulsation lumineuse synchronisée au volume sonore (RMS) de la voix du robot.
 
-#### Sous-étape 1B : Bibliothèque d'animations d'expressions (Style Kaomoji)
+#### Sous-étape 1B : Bibliothèque d'animations d'expressions (Style EVE + bouche)
 
-1. **Transitions vectorielles fluides (morphing / interpolation) entre les états émotionnels :**
-   - `neutral` (`• _ •`) : Deux grands yeux ouverts avec regard doux et clignements réguliers.
-   - `happy` (`^ _ ^`) : Yeux en arcs de cercle joyeux vers le haut (quand il rit ou félicite l'enfant).
-   - `curious` (`o _ O`) : Un œil grand ouvert et un œil plissé/sourcil relevé (quand on lui pose une énigme ou qu'il réfléchit).
-   - `sleepy` / `bored` (`- _ -`) : Paupières à moitié fermées ou traits horizontaux (en mode veille ou quand il fait semblant de bouder/dormir).
-   - `surprised` (`O _ O`) : Grands cercles dilatés avec reflets brillants.
-   - `love` (`♥ _ ♥`) : Yeux en forme de cœurs (quand l'enfant lui montre un beau dessin).
-   - `dizzy` (`> _ <` ou `@ _ @`) : Yeux fermés en chevrons (quand il fait une blague ou fait semblant d'avoir le tournis).
+Référence visuelle (2 rangées de 5, couleur `#79D7E3`) : [docs/reference-faces.jfif](docs/reference-faces.jfif).
+
+1. **Yeux lumineux sans pupilles + bouche systématique, transition animée (pop 300 ms) :**
+   - `neutral` : Deux ovales verticaux + petit sourire. **Cligne des yeux.**
+   - `dead` : Yeux en croix `X X` + bouche plate (quand il "fait le mort" pour rire).
+   - `mean` : Lames pleines en biais (épais en haut/extérieur, pointe en bas/intérieur) + petit sourire espiègle (faux méchant pour jouer).
+   - `dizzy` (`>_<`) : Yeux en chevrons + sourire (quand il fait une blague ou fait semblant d'avoir le tournis).
+   - `happy` : Deux ovales verticaux + bouche en demi-disque (joie). **Cligne des yeux.**
+   - `laugh` : Yeux en arcs `^_^` + grande bouche en demi-disque (gros fou rire).
+   - `love` (`♥`) : Yeux en forme de cœurs + sourire (quand l'enfant lui montre un beau dessin).
+   - `wink` : Un ovale + un œil en chevron + sourire (clin d'œil complice, ne cligne pas).
+   - `sleep` : Yeux fermés en U + bouche plate (expression dormir, éveillé).
+   - `tired` : Dômes pleins (paupières lourdes) + bouche plate (fatigue).
+   - Touches `1`–`9`, `0` : même ordre que le dessin — neutre, mort, méchant, tournis, joie, fatigue, amour, rire, clin d'œil, dormir.
+   - Seuls `neutral` et `happy` clignent ; le sommeil (bâillement/dodo/réveil) ferme tous les yeux.
+   - Sources : `docs/faces/*.svg` (un fichier par émotion, groupes `eyes`/`mouth`, voir `docs/faces/README.md`), rendus via Svg.Skia en 2 calques animés (squash/translation des yeux, bouche en parallaxe) + glow SkiaSharp au rendu.
 
 #### Sous-étape 1C : Réveil vocal (*Wake Word*) & Conversation Gemini Live
 

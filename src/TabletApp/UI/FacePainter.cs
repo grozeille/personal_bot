@@ -3,56 +3,78 @@ using SkiaSharp;
 namespace TabletApp.UI;
 
 /// <summary>
-/// Dessin pur du visage (sans état ni fenêtre) : utilisable à la fois par le
-/// rendu temps réel (<c>RobotFaceRenderer</c>) et par le self-test offscreen
-/// (<c>SelfTest</c>), qui produit des PNG vérifiables sans écran.
-/// Style EVE : yeux lumineux sans pupilles ; le regard déplace l'œil entier.
+/// Dessin du visage à partir des SVG embarqués (docs/faces, un par émotion),
+/// découpés en 2 calques (yeux/bouche) pour l'animation : clignement (squash
+/// vertical des yeux), regard (translation, bouche en parallaxe), bâillement,
+/// pop de transition. Le glow est ajouté au rendu (flou), les SVG restent plats.
+/// Règle : seuls neutral et happy clignent ; le sommeil ferme tous les yeux.
 /// </summary>
 internal static class FacePainter
 {
-    private static readonly SKColor EyeColor = new(0x33, 0xCC, 0xFF); // cyan lumineux
+    private const float ViewW = 800f;
+    private const float ViewH = 550f;
+    private const float EyeLineY = 295f;
+    private const float FaceCenterX = 400f;
+    private const float FaceCenterY = 330f;
 
     public static void DrawFace(
         SKCanvas canvas, int width, int height,
         double openAmount, double gazeX, double gazeY,
-        double yawn, double timeSeconds)
+        double yawn, double timeSeconds,
+        RobotExpression expression, double pop,
+        bool awake = true)
     {
         canvas.Clear(SKColors.Black);
-        float r = Math.Min(width, height) * 0.11f;
-        float cy = height * 0.44f;
-        DrawEye(canvas, width * 0.5f - r * 1.7f, cy, r, openAmount, gazeX, gazeY, yawn, timeSeconds);
-        DrawEye(canvas, width * 0.5f + r * 1.7f, cy, r, openAmount, gazeX, gazeY, yawn, timeSeconds);
+        var face = SvgFaceLoader.For(expression);
+
+        float scale = Math.Min(width / ViewW, height / ViewH);
+        float ox = (width - ViewW * scale) / 2;
+        float oy = (height - ViewH * scale) / 2;
+
+        double open = awake && !Blinks(expression) ? 1.0 : openAmount;
+        float squash = (float)Math.Max(0.02, open);
+        float squeeze = (float)(1 - 0.1 * yawn);
+        float tremble = (float)(Math.Sin(timeSeconds * 45) * 2.5 * yawn);
+        float ex = (float)(gazeX * ViewW * 0.0375);
+        float ey = (float)(-gazeY * ViewH * 0.045 + tremble);
+        const float mouthParallax = 0.55f;
+
+        using var glow = new SKPaint
+        {
+            MaskFilter = SKMaskFilter.CreateBlur(SKBlurStyle.Normal, 26f),
+        };
+
+        DrawLayer(canvas, face.Mouth, ox, oy, scale, (float)pop,
+            ex * mouthParallax, ey * mouthParallax, 1f, 1f, glow, FaceCenterY);
+        DrawLayer(canvas, face.Eyes, ox, oy, scale, (float)pop,
+            ex, ey, squeeze, squash, glow, pivotY: EyeLineY);
     }
 
-    private static void DrawEye(
-        SKCanvas canvas, float cx, float cy, float r,
-        double open, double gazeX, double gazeY,
-        double yawn, double timeSeconds)
+    private static bool Blinks(RobotExpression expression) => expression switch
     {
-        // Sans pupilles : le regard déplace l'œil entier.
-        float cxGaze = cx + (float)(gazeX * r * 0.45);
-        float cyGaze = cy - (float)(gazeY * r * 0.25);
+        RobotExpression.Neutral => true,
+        RobotExpression.Happy => true,
+        _ => false,
+    };
 
-        // Bâillement : œil écrasé horizontalement + léger tremblement vertical.
-        float rx = (float)(r * (1 - 0.25 * yawn));
-        float cyTremble = cyGaze + (float)(Math.Sin(timeSeconds * 45) * 2.0 * yawn);
-
-        // Halo.
-        using (var glow = new SKPaint
-        {
-            Color = EyeColor.WithAlpha(60),
-            IsAntialias = true,
-            MaskFilter = SKMaskFilter.CreateBlur(SKBlurStyle.Normal, r * 0.5f),
-        })
-        {
-            canvas.DrawCircle(cxGaze, cyGaze, r * 1.15f, glow);
-        }
-
-        // Corps de l'œil (s'écrase verticalement pendant le clignement).
-        float ry = Math.Max(2f, (float)(r * open));
-        using (var body = new SKPaint { Color = EyeColor, IsAntialias = true })
-        {
-            canvas.DrawOval(cxGaze, cyTremble, rx, ry, body);
-        }
+    private static void DrawLayer(
+        SKCanvas canvas, SKPicture picture,
+        float ox, float oy, float scale, float pop,
+        float tx, float ty, float sx, float sy,
+        SKPaint glow, float pivotY)
+    {
+        canvas.Save();
+        canvas.Translate(ox, oy);
+        canvas.Scale(scale);
+        canvas.Translate(FaceCenterX, FaceCenterY);
+        canvas.Scale(pop);
+        canvas.Translate(-FaceCenterX, -FaceCenterY);
+        canvas.Translate(tx, ty);
+        canvas.Translate(FaceCenterX, pivotY);
+        canvas.Scale(sx, sy);
+        canvas.Translate(-FaceCenterX, -pivotY);
+        canvas.DrawPicture(picture, glow);
+        canvas.DrawPicture(picture);
+        canvas.Restore();
     }
 }

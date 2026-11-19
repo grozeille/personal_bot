@@ -10,6 +10,7 @@ namespace TabletApp.Tests.Steps;
 public sealed class FaceSteps
 {
     private readonly SimulatedFace _face;
+    private readonly ScenarioContext _context;
 
     public FaceSteps(ScenarioContext context)
     {
@@ -19,6 +20,7 @@ public sealed class FaceSteps
             context["face"] = face;
         }
         _face = face;
+        _context = context;
     }
 
     [Given("un visage éveillé")]
@@ -28,7 +30,7 @@ public sealed class FaceSteps
         Assert.True(_face.Sleep.IsAwake);
     }
 
-    [When("(\\d+) secondes? s'écoulent")]
+    [When("^(\\d+) secondes? s'écoulent$")]
     public void WhenSecondesSEcoulent(int seconds) =>
         _face.Advance(TimeSpan.FromSeconds(seconds));
 
@@ -95,6 +97,23 @@ public sealed class FaceSteps
         Assert.Equal(SleepController.State.Awake, _face.Sleep.Current);
         Assert.Equal(1.0, _face.Sleep.EyeOpen);
     }
+
+    [When("^on affiche l'expression \"(.*)\"$")]
+    public void WhenExpression(string emotion)
+    {
+        _face.Expression.SetEmotion(emotion, _face.Now);
+        _context["emotion"] = emotion;
+    }
+
+    [Then("^l'expression affichée est \"(.*)\"$")]
+    public void ThenExpression(string expected) =>
+        Assert.Equal(
+            expected.ToLowerInvariant(),
+            _face.Expression.Current.ToString().ToLowerInvariant());
+
+    [Then("^la transition est terminée$")]
+    public void ThenTransitionTerminee() =>
+        Assert.False(_face.Expression.Transitioning);
 
     private static double ParseFr(string text) =>
         double.Parse(text.Replace(',', '.'), CultureInfo.InvariantCulture);

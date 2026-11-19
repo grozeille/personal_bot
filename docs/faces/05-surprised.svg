@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 550" width="800" height="550">
+  <title>surprised — yeux ovales, bouche en D à coins arrondis</title>
+  <rect x="10" y="10" width="780" height="530" rx="30" fill="#000000" stroke="#FFFFFF" stroke-width="5"/>
+  <g id="eyes" fill="#8EDCE9">
+    <ellipse cx="244" cy="265" rx="31" ry="47"/>
+    <ellipse cx="552" cy="265" rx="31" ry="47"/>
+  </g>
+  <g id="mouth" fill="#8EDCE9">
+    <path d="M 372 331 L 426 331 Q 441 331 441 346 A 42 46 0 0 1 357 346 Q 357 331 372 331 Z"/>
+  </g>
+</svg>

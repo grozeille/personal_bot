@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 550" width="800" height="550">
+  <title>bored — yeux demi-disque à coins arrondis, bouche capsule</title>
+  <rect x="10" y="10" width="780" height="530" rx="30" fill="#000000" stroke="#FFFFFF" stroke-width="5"/>
+  <g id="eyes" fill="#8EDCE9">
+    <path d="M 223 268 L 288 268 Q 300 268 300 280 L 300 287 A 45 19 0 0 1 211 287 L 211 280 Q 211 268 223 268 Z"/>
+    <path d="M 517 268 L 582 268 Q 594 268 594 280 L 594 287 A 45 19 0 0 1 505 287 L 505 280 Q 505 268 517 268 Z"/>
+  </g>
+  <g id="mouth" fill="none" stroke="#8EDCE9" stroke-width="11" stroke-linecap="round">
+    <path d="M 368 375 L 442 375"/>
+  </g>
+</svg>

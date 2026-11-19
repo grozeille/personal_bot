@@ -6,13 +6,32 @@ namespace TabletApp;
 
 /// <summary>
 /// Mode test sans UI (<c>--self-test</c>) : simule l'animation en pas de 16 ms,
-/// vérifie les invariants du clignement, du regard et du sommeil, et rend des
-/// frames offscreen en PNG (vérifiables sans écran). Usage :
-/// <c>dotnet run --project src/TabletApp -- --self-test</c>.
+/// vérifie les invariants du clignement, du regard, du sommeil et des
+/// expressions, et rend des frames offscreen en PNG (vérifiables sans écran).
+/// Usage : <c>dotnet run --project src/TabletApp -- --self-test</c>.
 /// Le rapport est affiché dans la console et copié dans %TEMP%\tabletapp-selftest.txt.
 /// </summary>
 internal static class SelfTest
 {
+    private static readonly string[] EmotionNames =
+    {
+        "neutral", "dead", "mean", "dizzy", "happy", "tired", "love", "laugh", "wink", "sleep",
+    };
+
+    private static readonly RobotExpression[] Emotions =
+    {
+        RobotExpression.Neutral,
+        RobotExpression.Dead,
+        RobotExpression.Mean,
+        RobotExpression.Dizzy,
+        RobotExpression.Happy,
+        RobotExpression.Tired,
+        RobotExpression.Love,
+        RobotExpression.Laugh,
+        RobotExpression.Wink,
+        RobotExpression.Sleep,
+    };
+
     [DllImport("kernel32.dll")]
     private static extern bool AttachConsole(int processId);
 
@@ -20,8 +39,10 @@ internal static class SelfTest
     {
         AttachConsole(-1); // ATTACH_PARENT_PROCESS : sortie dans le terminal appelant.
         var log = new List<string>();
-        bool ok = CheckBlink(log) & CheckGaze(log) & CheckSleep(log);
+        bool ok = CheckBlink(log) & CheckGaze(log) & CheckSleep(log)
+            & CheckExpression(log) & CheckBlinkGating(log);
         RenderFrames(log);
+        RenderExpressionSheet(log);
         log.Add(ok ? "SELF-TEST: PASS" : "SELF-TEST: FAIL");
         foreach (string line in log)
         {
@@ -161,23 +182,86 @@ internal static class SelfTest
         return ok;
     }
 
+    private static bool CheckExpression(List<string> log)
+    {
+        var expression = new ExpressionController();
+        var step = TimeSpan.FromMilliseconds(16);
+        var now = TimeSpan.Zero;
+        bool ok = true;
+
+        for (int i = 0; i < EmotionNames.Length; i++)
+        {
+            expression.SetEmotion(EmotionNames[i], now);
+            ok &= !expression.Transitioning; // changement instantané (transitions désactivées)
+            TimeSpan end = now + TimeSpan.FromSeconds(1);
+            while (now < end)
+            {
+                expression.Update(now);
+                now += step;
+            }
+            bool match = expression.Current == Emotions[i]
+                && !expression.Transitioning
+                && expression.PopScale == 1.0;
+            ok &= match;
+        }
+
+        // Émotion inconnue : ignorée, l'expression courante est conservée.
+        expression.SetEmotion("nimportequoi", now);
+        ok &= expression.Current == RobotExpression.Sleep;
+
+        log.Add($"Expression: {EmotionNames.Length} émotions mappées, inconnue ignorée -> {(ok ? "OK" : "KO")}");
+        return ok;
+    }
+
+    private static bool CheckBlinkGating(List<string> log)
+    {
+        // Seuls neutral et happy clignent ; le sommeil ferme tous les yeux.
+        bool neutralBlinks = !RenderBytes(RobotExpression.Neutral, 1.0, awake: true)
+            .SequenceEqual(RenderBytes(RobotExpression.Neutral, 0.0, awake: true));
+        bool happyBlinks = !RenderBytes(RobotExpression.Happy, 1.0, awake: true)
+            .SequenceEqual(RenderBytes(RobotExpression.Happy, 0.0, awake: true));
+        bool winkStatic = RenderBytes(RobotExpression.Wink, 1.0, awake: true)
+            .SequenceEqual(RenderBytes(RobotExpression.Wink, 0.0, awake: true));
+        bool dizzyStatic = RenderBytes(RobotExpression.Dizzy, 1.0, awake: true)
+            .SequenceEqual(RenderBytes(RobotExpression.Dizzy, 0.0, awake: true));
+        bool sleepOverrides = !RenderBytes(RobotExpression.Happy, 1.0, awake: false)
+            .SequenceEqual(RenderBytes(RobotExpression.Happy, 0.0, awake: false));
+        bool ok = neutralBlinks && happyBlinks && winkStatic && dizzyStatic && sleepOverrides;
+        log.Add($"BlinkGating: neutral={neutralBlinks}, happy={happyBlinks}, " +
+            $"wink statique={winkStatic}, dizzy statique={dizzyStatic}, " +
+            $"sommeil prioritaire={sleepOverrides} -> {(ok ? "OK" : "KO")}");
+        return ok;
+    }
+
+    private static byte[] RenderBytes(RobotExpression expression, double open, bool awake)
+    {
+        using var bitmap = new SKBitmap(400, 300);
+        using var canvas = new SKCanvas(bitmap);
+        FacePainter.DrawFace(canvas, 400, 300, open, 0, 0, 0, 0, expression, 1.0, awake);
+        using var image = SKImage.FromBitmap(bitmap);
+        using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+        return data.ToArray();
+    }
+
     private static void RenderFrames(List<string> log)
     {
-        var frames = new (string Name, double Open, double GazeX, double GazeY, double Yawn, double Time)[]
+        var frames = new (string Name, double Open, double GazeX, double Yawn, double Time, bool Awake)[]
         {
-            ("neutre", 1.0, 0.0, 0.0, 0.0, 0.0),
-            ("clin", 0.0, 0.0, 0.0, 0.0, 0.0),
-            ("gauche", 1.0, -1.0, 0.0, 0.0, 0.0),
-            ("droite", 1.0, 1.0, 0.0, 0.0, 0.0),
-            ("baillement", 0.35, 0.0, 0.0, 1.0, 0.5),
-            ("dodo", 0.0, 0.0, 0.0, 0.0, 0.0),
-            ("reveil", 0.45, 0.0, 0.0, 0.0, 0.0),
+            ("neutre", 1.0, 0.0, 0.0, 0.0, true),
+            ("clin", 0.0, 0.0, 0.0, 0.0, true),
+            ("gauche", 1.0, -1.0, 0.0, 0.0, true),
+            ("droite", 1.0, 1.0, 0.0, 0.0, true),
+            ("baillement", 0.35, 0.0, 1.0, 0.5, false),
+            ("dodo", 0.0, 0.0, 0.0, 0.0, false),
+            ("reveil", 0.45, 0.0, 0.0, 0.0, false),
         };
-        foreach (var (name, open, gazeX, gazeY, yawn, time) in frames)
+        foreach (var (name, open, gazeX, yawn, time, awake) in frames)
         {
             using var bitmap = new SKBitmap(800, 600);
             using var canvas = new SKCanvas(bitmap);
-            FacePainter.DrawFace(canvas, 800, 600, open, gazeX, gazeY, yawn, time);
+            FacePainter.DrawFace(
+                canvas, 800, 600, open, gazeX, 0, yawn, time,
+                RobotExpression.Neutral, 1.0, awake);
             using var image = SKImage.FromBitmap(bitmap);
             using var data = image.Encode(SKEncodedImageFormat.Png, 100);
             string path = Path.Combine(Path.GetTempPath(), $"tabletapp-frame-{name}.png");
@@ -185,5 +269,35 @@ internal static class SelfTest
             data.SaveTo(stream);
             log.Add($"Frame '{name}' -> {path}");
         }
+    }
+
+    private static void RenderExpressionSheet(List<string> log)
+    {
+        const int cellWidth = 280;
+        const int cellHeight = 260;
+        const int labelHeight = 40;
+        using var sheet = new SKBitmap(cellWidth * EmotionNames.Length, cellHeight + labelHeight);
+        using var canvas = new SKCanvas(sheet);
+        canvas.Clear(SKColors.Black);
+        using var font = new SKFont { Size = 22 };
+        using var text = new SKPaint { Color = SKColors.Gray, IsAntialias = true };
+        for (int i = 0; i < Emotions.Length; i++)
+        {
+            using var cell = new SKBitmap(cellWidth, cellHeight);
+            using var cellCanvas = new SKCanvas(cell);
+            FacePainter.DrawFace(
+                cellCanvas, cellWidth, cellHeight, 1.0, 0, 0, 0, 0, Emotions[i], 1.0);
+            using var image = SKImage.FromBitmap(cell);
+            canvas.DrawImage(image, (float)(i * cellWidth), 0f, SKSamplingOptions.Default);
+            canvas.DrawText(
+                EmotionNames[i], (float)(i * cellWidth + 10), cellHeight + 28,
+                SKTextAlign.Left, font, text);
+        }
+        using var sheetImage = SKImage.FromBitmap(sheet);
+        using var data = sheetImage.Encode(SKEncodedImageFormat.Png, 100);
+        string path = Path.Combine(Path.GetTempPath(), "tabletapp-frame-expressions.png");
+        using var stream = File.OpenWrite(path);
+        data.SaveTo(stream);
+        log.Add($"Planche expressions -> {path}");
     }
 }

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 550" width="800" height="550">
+  <title>sleepy — yeux fermés en arc, bouche plate</title>
+  <rect x="10" y="10" width="780" height="530" rx="30" fill="#000000" stroke="#FFFFFF" stroke-width="5"/>
+  <g id="eyes" fill="none" stroke="#8EDCE9" stroke-width="15" stroke-linecap="round">
+    <path d="M 204 274 Q 252 300 300 274"/>
+    <path d="M 490 274 Q 538 300 586 274"/>
+  </g>
+  <g id="mouth" fill="none" stroke="#8EDCE9" stroke-width="14" stroke-linecap="round">
+    <path d="M 356 368 L 444 368"/>
+  </g>
+</svg>

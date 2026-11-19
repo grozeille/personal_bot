@@ -18,6 +18,7 @@ internal sealed class SimulatedFace
     public BlinkController Blink { get; } = new(new Random(42));
     public GazeController Gaze { get; } = new(new Random(7));
     public SleepController Sleep { get; } = new();
+    public ExpressionController Expression { get; } = new();
     public TimeSpan Now { get; private set; }
 
     public List<double> BlinkStarts { get; } = new();
@@ -42,6 +43,7 @@ internal sealed class SimulatedFace
         while (Now < end)
         {
             Sleep.Update(Now);
+            Expression.Update(Now);
             if (Sleep.IsAwake)
             {
                 Blink.Update(Now);
