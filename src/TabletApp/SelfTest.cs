@@ -43,10 +43,10 @@ internal static class SelfTest
         AttachConsole(-1); // ATTACH_PARENT_PROCESS : sortie dans le terminal appelant.
         var log = new List<string>();
         bool ok = CheckBlink(log) & CheckGaze(log) & CheckSleep(log)
-            & CheckExpression(log) & CheckBlinkGating(log) & CheckFaceComplete(log);
+            & CheckExpression(log) & CheckBlinkGating(log) & CheckFaceComplete(log)
+            & CheckSteadyYawn(log);
         RenderFrames(log);
         RenderExpressionSheet(log);
-        RenderTransitionFrame(log);
         log.Add(ok ? "SELF-TEST: PASS" : "SELF-TEST: FAIL");
         foreach (string line in log)
         {
@@ -198,45 +198,19 @@ internal static class SelfTest
     private static bool CheckExpression(List<string> log)
     {
         var expression = new ExpressionController();
-        var step = TimeSpan.FromMilliseconds(16);
-        var now = TimeSpan.Zero;
         bool ok = true;
-        RobotExpression prev = RobotExpression.Neutral;
 
         for (int i = 0; i < EmotionNames.Length; i++)
         {
-            bool changing = Emotions[i] != prev;
-            TimeSpan t0 = now;
-            expression.SetEmotion(EmotionNames[i], now);
-            prev = Emotions[i];
-            ok &= expression.Transitioning == changing;
-            while (now < t0 + TimeSpan.FromMilliseconds(225))
-            {
-                expression.Update(now);
-                now += step;
-            }
-            ok &= !changing || (expression.Progress > 0.0 && expression.Progress < 1.0);
-            while (now < t0 + TimeSpan.FromSeconds(1))
-            {
-                expression.Update(now);
-                now += step;
-            }
-            ok &= expression.Current == Emotions[i]
-                && !expression.Transitioning
-                && expression.Progress == 1.0;
+            expression.SetEmotion(EmotionNames[i]);
+            ok &= expression.Current == Emotions[i];
         }
 
         // Émotion inconnue : ignorée, l'expression courante est conservée.
-        expression.SetEmotion("nimportequoi", now);
+        expression.SetEmotion("nimportequoi");
         ok &= expression.Current == RobotExpression.Shocked;
 
-        // À mi-transition, le rendu diffère des deux états stables.
-        byte[] mid = RenderBytes(RobotExpression.Happy, 1.0, true, RobotExpression.Neutral, 0.5);
-        ok &= !mid.SequenceEqual(RenderBytes(RobotExpression.Happy, 1.0, true, RobotExpression.Happy, 1.0));
-        ok &= !mid.SequenceEqual(RenderBytes(RobotExpression.Neutral, 1.0, true, RobotExpression.Neutral, 1.0));
-
-        log.Add($"Expression: {EmotionNames.Length} émotions mappées, inconnue ignorée, " +
-            $"mi-transition distincte -> {(ok ? "OK" : "KO")}");
+        log.Add($"Expression: {EmotionNames.Length} émotions mappées, inconnue ignorée -> {(ok ? "OK" : "KO")}");
         return ok;
     }
 
@@ -291,24 +265,33 @@ internal static class SelfTest
         return ok;
     }
 
+    private static bool CheckSteadyYawn(List<string> log)
+    {
+        // Non-régression : pendant le bâillement, rien ne doit osciller dans le
+        // temps (même progression, instants différents = pixels identiques).
+        byte[] a = RenderBytes(RobotExpression.Tired, 1.0, awake: false, yawn: 1.0, timeSeconds: 0.5);
+        byte[] b = RenderBytes(RobotExpression.Tired, 1.0, awake: false, yawn: 1.0, timeSeconds: 1.7);
+        bool ok = a.SequenceEqual(b);
+        log.Add($"SteadyYawn: bâillement stable dans le temps -> {(ok ? "OK" : "KO")}");
+        return ok;
+    }
+
     private static SKBitmap RenderBitmap(
         RobotExpression expression, double open, bool awake,
-        RobotExpression? previous = null, double progress = 1.0,
-        MouthOverride? mouthOverride = null)
+        MouthOverride? mouthOverride = null, double yawn = 0.0, double timeSeconds = 0.0)
     {
         var bitmap = new SKBitmap(400, 300);
         using var canvas = new SKCanvas(bitmap);
-        FacePainter.DrawFace(canvas, 400, 300, open, 0, 0, 0, 0,
-            expression, previous ?? expression, progress, mouthOverride, awake);
+        FacePainter.DrawFace(canvas, 400, 300, open, 0, 0, yawn, timeSeconds,
+            expression, mouthOverride, awake);
         return bitmap;
     }
 
     private static byte[] RenderBytes(
         RobotExpression expression, double open, bool awake,
-        RobotExpression? previous = null, double progress = 1.0,
-        MouthOverride? mouthOverride = null)
+        MouthOverride? mouthOverride = null, double yawn = 0.0, double timeSeconds = 0.0)
     {
-        using var bitmap = RenderBitmap(expression, open, awake, previous, progress, mouthOverride);
+        using var bitmap = RenderBitmap(expression, open, awake, mouthOverride, yawn, timeSeconds);
         using var image = SKImage.FromBitmap(bitmap);
         using var data = image.Encode(SKEncodedImageFormat.Png, 100);
         return data.ToArray();
@@ -332,7 +315,7 @@ internal static class SelfTest
             using var canvas = new SKCanvas(bitmap);
             FacePainter.DrawFace(
                 canvas, 800, 600, open, gazeX, 0, yawn, time,
-                expr, expr, 1.0, mouth, awake);
+                expr, mouth, awake);
             using var image = SKImage.FromBitmap(bitmap);
             using var data = image.Encode(SKEncodedImageFormat.Png, 100);
             string path = Path.Combine(Path.GetTempPath(), $"tabletapp-frame-{name}.png");
@@ -357,8 +340,7 @@ internal static class SelfTest
             using var cell = new SKBitmap(cellWidth, cellHeight);
             using var cellCanvas = new SKCanvas(cell);
             FacePainter.DrawFace(
-                cellCanvas, cellWidth, cellHeight, 1.0, 0, 0, 0, 0,
-                Emotions[i], Emotions[i], 1.0);
+                cellCanvas, cellWidth, cellHeight, 1.0, 0, 0, 0, 0, Emotions[i]);
             using var image = SKImage.FromBitmap(cell);
             canvas.DrawImage(image, (float)(i * cellWidth), 0f, SKSamplingOptions.Default);
             canvas.DrawText(
@@ -371,50 +353,5 @@ internal static class SelfTest
         using var stream = File.OpenWrite(path);
         data.SaveTo(stream);
         log.Add($"Planche expressions -> {path}");
-    }
-
-    private static void RenderTransitionFrame(List<string> log)
-    {
-        // Transition neutre -> joie à 25/50/75 % : la cascade mute chaque
-        // partie à son tour (œil gauche, puis droit, puis bouche).
-        foreach (double progress in new[] { 0.25, 0.5, 0.75 })
-        {
-            using var bitmap = new SKBitmap(800, 600);
-            using var canvas = new SKCanvas(bitmap);
-            FacePainter.DrawFace(canvas, 800, 600, 1.0, 0, 0, 0, 0,
-                RobotExpression.Happy, RobotExpression.Neutral, progress);
-            using var image = SKImage.FromBitmap(bitmap);
-            using var data = image.Encode(SKEncodedImageFormat.Png, 100);
-            string path = Path.Combine(Path.GetTempPath(), $"tabletapp-frame-transition-{(int)(progress * 100)}.png");
-            using var stream = File.OpenWrite(path);
-            data.SaveTo(stream);
-            log.Add($"Frame transition ({progress:P0}) -> {path}");
-        }
-    }
-
-    /// <summary>
-    /// Diagnostic : rend une transition arbitraire (usage :
-    /// <c>dotnet run --project src/TabletApp -- --transition wink tired 0.5</c>).
-    /// </summary>
-    public static bool RenderCustomTransition(string from, string to, double progress)
-    {
-        AttachConsole(-1);
-        if (!Enum.TryParse<RobotExpression>(from, true, out RobotExpression f)
-            || !Enum.TryParse<RobotExpression>(to, true, out RobotExpression t))
-        {
-            Console.WriteLine($"Émotion inconnue : {from} / {to}");
-            return false;
-        }
-        using var bitmap = new SKBitmap(800, 600);
-        using var canvas = new SKCanvas(bitmap);
-        FacePainter.DrawFace(canvas, 800, 600, 1.0, 0, 0, 0, 0,
-            t, f, Math.Clamp(progress, 0, 1));
-        using var image = SKImage.FromBitmap(bitmap);
-        using var data = image.Encode(SKEncodedImageFormat.Png, 100);
-        string path = Path.Combine(Path.GetTempPath(), "tabletapp-frame-custom.png");
-        using var stream = File.OpenWrite(path);
-        data.SaveTo(stream);
-        Console.WriteLine($"Frame -> {path}");
-        return true;
     }
 }

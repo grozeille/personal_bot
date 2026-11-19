@@ -38,7 +38,6 @@ internal sealed class SimulatedFace
         while (Now < end)
         {
             Sleep.Update(Now);
-            Expression.Update(Now);
             if (Sleep.IsAwake)
             {
                 Blink.Update(Now);

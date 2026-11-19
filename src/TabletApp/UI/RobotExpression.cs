@@ -21,53 +21,24 @@ internal enum RobotExpression
 }
 
 /// <summary>
-/// Pilote l'expression courante + transition en cascade (chaque partie du
-/// visage mute à son tour, voir <c>FacePainter</c>).
-/// Logique pure (temps injecté) pour être testable sans UI.
+/// Pilote l'expression courante (changement instantané, sans transition).
 /// </summary>
 internal sealed class ExpressionController
 {
-    private static readonly TimeSpan TransitionDuration = TimeSpan.FromMilliseconds(450);
-
-    private TimeSpan _transitionStartedAt;
-
     public RobotExpression Current { get; private set; } = RobotExpression.Neutral;
-    public RobotExpression Previous { get; private set; } = RobotExpression.Neutral;
 
-    /// <summary>Progression 0..1 (1 = repos, aucune transition).</summary>
-    public double Progress { get; private set; } = 1.0;
-
-    public bool Transitioning => Progress < 1.0;
-
-    public void SetExpression(RobotExpression expression, TimeSpan now)
+    public void SetExpression(RobotExpression expression)
     {
-        if (expression == Current)
-        {
-            return;
-        }
-        Previous = Current;
         Current = expression;
-        _transitionStartedAt = now;
-        Progress = 0.0;
     }
 
-    public void SetEmotion(string emotion, TimeSpan now)
+    public void SetEmotion(string emotion)
     {
         if (TryParse(emotion, out RobotExpression expression))
         {
-            SetExpression(expression, now);
+            SetExpression(expression);
         }
         // Émotion inconnue : ignorée (robustesse face aux typos du LLM).
-    }
-
-    public void Update(TimeSpan now)
-    {
-        if (Progress >= 1.0)
-        {
-            return;
-        }
-        Progress = Math.Min(1.0,
-            (now - _transitionStartedAt).TotalMilliseconds / TransitionDuration.TotalMilliseconds);
     }
 
     private static bool TryParse(string emotion, out RobotExpression expression)

@@ -8,10 +8,8 @@ namespace TabletApp.UI;
 
 /// <summary>
 /// Charge les visages SVG embarqués (docs/faces, un par émotion) et les
-/// découpe en 3 calques (œil gauche, œil droit, bouche) mis en cache pour le
-/// rendu 60 FPS. Le découpage est figé au chargement (et non clippé au rendu),
-/// sinon les transformations animeraient du contenu sous le clip.
-/// Échec rapide et explicite si un fichier ou un groupe manque.
+/// découpe en 2 calques (groupes id="eyes*"/id="mouth*") mis en cache pour le
+/// rendu 60 FPS. Échec rapide et explicite si un fichier ou un groupe manque.
 /// Les SKSvg sont conservés en cache avec leurs SKPicture (durée de vie = app).
 /// </summary>
 internal static class SvgFaceLoader
@@ -37,8 +35,7 @@ internal static class SvgFaceLoader
     {
         public required SKSvg EyesSvg;
         public required SKSvg MouthSvg;
-        public required SKPicture EyesLeft;
-        public required SKPicture EyesRight;
+        public SKPicture Eyes => EyesSvg.Picture!;
         public SKPicture Mouth => MouthSvg.Picture!;
     }
 
@@ -63,14 +60,10 @@ internal static class SvgFaceLoader
                 $"Ressource SVG introuvable : {resource} (docs/faces/{file} non embarquée ?).");
         var doc = XDocument.Load(stream);
         GuardGroups(doc, file);
-        var eyes = LoadGroups(doc, "eyes", file);
-        var mouth = LoadGroups(doc, "mouth", file);
         return new FaceLayers
         {
-            EyesSvg = eyes,
-            MouthSvg = mouth,
-            EyesLeft = ClipHalf(eyes.Picture!, new SKRect(0, 0, 400, 550), file),
-            EyesRight = ClipHalf(eyes.Picture!, new SKRect(400, 0, 800, 550), file),
+            EyesSvg = LoadGroups(doc, "eyes", file),
+            MouthSvg = LoadGroups(doc, "mouth", file),
         };
     }
 
@@ -120,17 +113,5 @@ internal static class SvgFaceLoader
             throw new InvalidDataException($"Rendu SVG impossible pour {file}#{prefix}.");
         }
         return svg;
-    }
-
-    private static SKPicture ClipHalf(SKPicture source, SKRect half, string file)
-    {
-        using var recorder = new SKPictureRecorder();
-        using (SKCanvas canvas = recorder.BeginRecording(new SKRect(0, 0, 800, 550)))
-        {
-            canvas.ClipRect(half);
-            canvas.DrawPicture(source);
-        }
-        return recorder.EndRecording()
-            ?? throw new InvalidDataException($"Découpe impossible pour {file}.");
     }
 }

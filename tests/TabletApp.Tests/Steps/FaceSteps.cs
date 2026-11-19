@@ -100,7 +100,7 @@ public sealed class FaceSteps
     [When("^on affiche l'expression \"(.*)\"$")]
     public void WhenExpression(string emotion)
     {
-        _face.Expression.SetEmotion(emotion, _face.Now);
+        _face.Expression.SetEmotion(emotion);
         _context["emotion"] = emotion;
     }
 
@@ -109,10 +109,6 @@ public sealed class FaceSteps
         Assert.Equal(
             expected.ToLowerInvariant(),
             _face.Expression.Current.ToString().ToLowerInvariant());
-
-    [Then("^la transition est terminée$")]
-    public void ThenTransitionTerminee() =>
-        Assert.False(_face.Expression.Transitioning);
 
     private static double ParseFr(string text) =>
         double.Parse(text.Replace(',', '.'), CultureInfo.InvariantCulture);

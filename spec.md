@@ -49,7 +49,7 @@ Schéma d'assemblage (tablette + Pan/Tilt/Roll + PCA9685 + Pi + alim 5V + base b
 
 Référence visuelle (2 rangées de 5, couleur `#79D7E3`) : [docs/reference-faces.jfif](docs/reference-faces.jfif).
 
-1. **Yeux lumineux sans pupilles + bouche systématique, transition en cascade (~450 ms, œil gauche puis droit puis bouche) :**
+1. **Yeux lumineux sans pupilles + bouche systématique, changement instantané (pas de transition : le morphing fluide reste à concevoir) :**
    - `neutral` : Deux ovales verticaux + petit sourire. **Cligne des yeux.**
    - `dead` : Yeux en croix `X X` + bouche plate (quand il "fait le mort" pour rire).
    - `mean` : Lames pleines en biais (épais en haut/extérieur, pointe en bas/intérieur) + petit sourire espiègle (faux méchant pour jouer).
