@@ -62,12 +62,13 @@ Référence visuelle (2 rangées de 5, couleur `#79D7E3`) : [docs/reference-face
    - `tired` : Dômes pleins (paupières lourdes) + bouche plate (fatigue).
    - `thinking` : Mêmes yeux que `neutral` + bouche en biais (réflexion).
    - `shocked` : Yeux dilatés + bouche en O (surprise totale).
-   - Touches `1`–`9`, `0` : même ordre que le dessin — neutre, mort, méchant, tournis, joie, fatigue, amour, rire, clin d'œil, dormir. `F11`/`F12` : réflexion, surprise.
+   - `confirm` : Œil gauche en X (annuler) + œil droit en coche (confirmer) + bouche point (question oui/non).
+   - Touches `1`–`9`, `0` : même ordre que le dessin — neutre, mort, méchant, tournis, joie, fatigue, amour, rire, clin d'œil, dormir. `F11`/`F12` : réflexion, surprise. `C` : confirmation.
    - Seuls `neutral` et `happy` clignent ; le sommeil (bâillement/dodo/réveil) ferme tous les yeux.
    - Endormissement automatique (#16) : `tired` après 5 min d'inactivité, bâillement puis `sleep` après 5 min de plus ; toute touche ou toucher réveille et restaure `neutral` (seuils réglables dans `appsettings.json`, section `Idle`).
-   - Sources : `docs/faces/parts/*.svg` (bibliothèque de 24 parties canoniques réutilisables : 9 yeux gauches, 9 yeux droits, 6 bouches, voir `docs/faces/README.md`), composées en 3 calques animés + glow SkiaSharp au rendu. Les `docs/faces/*.svg` restent la référence d'auteur.
+   - Sources : `docs/faces/parts/*.svg` (bibliothèque de 27 parties canoniques réutilisables : 10 yeux gauches, 10 yeux droits, 7 bouches, voir `docs/faces/README.md`), composées en 3 calques animés + glow SkiaSharp au rendu. Les `docs/faces/*.svg` restent la référence d'auteur.
    - Équivalences déclarées (pas d'animation entre elles) : œil gauche {neutral, happy, wink, thinking}, œil droit {neutral, happy, thinking} et {dizzy, wink}, bouche {neutral, mean, dizzy, love, wink} et {dead, tired, sleep}.
-   - Regard fixe (pas de surveillance) pour `dead`, `dizzy`, `tired`, `wink`, `sleep` (yeux non ouverts).
+   - Regard fixe (pas de surveillance) pour `dead`, `dizzy`, `tired`, `wink`, `sleep`, `confirm` (yeux non ouverts).
 
 #### Sous-étape 1C : Réveil vocal (*Wake Word*) & Conversation Gemini Live
 

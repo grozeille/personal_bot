@@ -57,4 +57,4 @@ Copy-Item (Join-Path $releasesDir '*') $Source -Force
 $index = Join-Path $Source 'releases.win.json'
 if (-not (Test-Path $index)) { throw "Index introuvable après copie : $index" }
 Write-Host "OK : $Version publiée. Index : $index"
-Write-Host 'Sur la tablette : icône en haut à droite sous 5 min, appui 3 s pour installer.'
+Write-Host 'Sur la tablette : icône en haut à droite sous 5 min, tap icône puis œil ✓ pour installer.'

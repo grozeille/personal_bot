@@ -37,17 +37,22 @@ sur GitHub (pense à les committer). Tâche VS Code : "tests + rapport".
 ## Contrôles
 
 - `Échap` : quitter (PC de dev).
-- Appui maintenu 3 s dans le coin haut-gauche : quitter (tablette tactile).
+- Tap dans le coin haut-gauche : visage de confirmation, œil droit (✓) pour quitter (tablette tactile).
 - `S` / `W` : s'endormir / se réveiller (provisoire, en attendant le wake word).
 - `1`–`9`, `0` : comme le dessin de référence — neutre, mort, méchant, tournis, joie, fatigue, amour, rire, clin d'œil, dormir. `F11`/`F12` : réflexion, surprise.
 - `U` : forcer une vérification de mise à jour (PC de dev).
+- `I` : aperçu de l'icône de mise à jour, avec/sans (PC de dev, sans NAS).
 
 ## Mises à jour (Velopack + NAS)
 
 Le robot vérifie `P:\RobotMaj` au démarrage puis toutes les 5 minutes
 (silencieux si le NAS est hors-ligne). Si une maj existe, une icône
 « flèches circulaires » (`docs/icons/update.svg`) apparaît en haut à droite :
-un appui maintenu de **3 secondes** dessus télécharge, installe et redémarre.
+un tap dessus affiche le visage de confirmation (`13-confirm.svg`, regard
+figé), œil gauche (X) = annuler, œil droit (✓) = télécharger, installer et
+redémarrer. (Pas d'appui long : Windows le promeut en clic droit.)
+Le même visage sert à la sortie tactile (depuis le coin haut-gauche) :
+l'icône reste visible pendant une confirmation de maj, pas de sortie.
 
 ```powershell
 # Publier une maj sur le NAS (version croissante obligatoire) :

@@ -25,13 +25,12 @@ internal sealed class MainForm : Form
 
     private readonly RobotFaceRenderer _face;
     private readonly System.Windows.Forms.Timer _titleTimer;
-    private readonly System.Windows.Forms.Timer _holdTimer;
     private readonly System.Windows.Forms.Timer _updateTimer;
-    private readonly QuitGesture _quit = new();
-    private readonly UpdateGesture _update = new();
+    private readonly ConfirmDialog _confirm = new();
     private readonly RobotUpdater _updater;
-    private readonly QuitMessageFilter _quitFilter;
+    private readonly TapMessageFilter _tapFilter;
     private bool _applying;
+    private bool _iconPreview;
 
     // Empêche la mise en veille de l'écran / du système (tête de robot allumée en continu).
     [DllImport("kernel32.dll")]
@@ -57,6 +56,10 @@ internal sealed class MainForm : Form
         _face = new RobotFaceRenderer { Dock = DockStyle.Fill };
         Controls.Add(_face);
 
+        UpdateOptions options = UpdateOptions.Load();
+        _updater = new RobotUpdater(new VelopackUpdateSource(options.Source));
+        _face.Idle = IdleOptions.Load();
+
         KeyPreview = true;
         KeyDown += (_, e) =>
         {
@@ -81,10 +84,12 @@ internal sealed class MainForm : Form
             }
             else if (e.KeyCode == Keys.F11)
             {
+                _confirm.Cancel();
                 _face.SetExpression(RobotExpression.Thinking);
             }
             else if (e.KeyCode == Keys.F12)
             {
+                _confirm.Cancel();
                 _face.SetExpression(RobotExpression.Shocked);
             }
             else if (e.KeyCode == Keys.U)
@@ -92,49 +97,31 @@ internal sealed class MainForm : Form
                 // Dev : forcer une vérification de maj (le robot le fait seul toutes les 5 min).
                 _ = CheckForUpdatesAsync();
             }
+            else if (e.KeyCode == Keys.C)
+            {
+                _confirm.Cancel();
+                _face.SetExpression(RobotExpression.Confirm);
+            }
+            else if (e.KeyCode == Keys.I)
+            {
+                // Dev : aperçu de l'icône de maj (sans NAS), tap icône puis
+                // yeux testables comme une vraie maj. Sans effet sur la détection.
+                _iconPreview = !_iconPreview;
+                UpdateFaceIcon();
+            }
             else if (Digit(e.KeyCode) is { } digit)
             {
+                _confirm.Cancel();
                 _face.SetExpression(ExpressionKeys[digit]);
             }
         };
 
-        UpdateOptions options = UpdateOptions.Load();
-        _updater = new RobotUpdater(new VelopackUpdateSource(options.Source));
-        _face.Idle = IdleOptions.Load();
-
         _titleTimer = new System.Windows.Forms.Timer { Interval = 1000 };
         _titleTimer.Tick += (_, _) =>
             Text = $"Robot Companion — {_face.Fps} FPS"
-                + (_updater.UpdateAvailable ? " — MAJ !" : "");
+                + (_updater.UpdateAvailable ? " — MAJ !" : "")
+                + (_iconPreview ? " — APERÇU" : "");
         _titleTimer.Start();
-
-        _holdTimer = new System.Windows.Forms.Timer { Interval = 100 };
-        _holdTimer.Tick += (_, _) =>
-        {
-            if (!Control.MouseButtons.HasFlag(MouseButtons.Left))
-            {
-                // Doigt relevé (ou UP perdu) : on désarme les deux gestes
-                // au lieu de quitter / mettre à jour plus tard.
-                _holdTimer.Stop();
-                _quit.Reset();
-                _update.Reset();
-                _face.UpdateProgress = 0;
-                return;
-            }
-            _quit.Tick(Now());
-            _update.Tick(Now());
-            _face.UpdateProgress = _update.Progress;
-            if (_quit.QuitRequested)
-            {
-                _holdTimer.Stop();
-                Close();
-            }
-            else if (_update.UpdateRequested && !_applying)
-            {
-                _holdTimer.Stop();
-                _ = DownloadAndApplyAsync();
-            }
-        };
 
         _updateTimer = new System.Windows.Forms.Timer
         {
@@ -143,8 +130,8 @@ internal sealed class MainForm : Form
         _updateTimer.Tick += (_, _) => _ = CheckForUpdatesAsync();
         _updateTimer.Start();
 
-        _quitFilter = new QuitMessageFilter(this);
-        Application.AddMessageFilter(_quitFilter);
+        _tapFilter = new TapMessageFilter(this);
+        Application.AddMessageFilter(_tapFilter);
 
         // Premier contrôle peu après le démarrage (silencieux si NAS hors-ligne).
         Shown += (_, _) => _ = CheckForUpdatesAsync();
@@ -172,13 +159,11 @@ internal sealed class MainForm : Form
 
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
-        Application.RemoveMessageFilter(_quitFilter);
+        Application.RemoveMessageFilter(_tapFilter);
         SetThreadExecutionState(ES_CONTINUOUS);
         Cursor.Show();
         base.OnFormClosed(e);
     }
-
-    private static TimeSpan Now() => TimeSpan.FromMilliseconds(Environment.TickCount64);
 
     private static int? Digit(Keys key) => key switch
     {
@@ -196,69 +181,91 @@ internal sealed class MainForm : Form
             return;
         }
         await _updater.CheckAsync().ConfigureAwait(true);
-        _face.UpdateAvailable = _updater.UpdateAvailable;
-        if (!_updater.UpdateAvailable)
+        UpdateFaceIcon();
+        if (!_updater.UpdateAvailable && _confirm.Active && !_applying)
         {
-            _update.Reset();
-            _face.UpdateProgress = 0;
+            // Maj disparue (NAS débranché) : on referme le dialogue.
+            _confirm.Cancel();
+            _face.SetExpression(_confirm.Previous);
         }
     }
+
+    private void UpdateFaceIcon() =>
+        _face.UpdateAvailable = _updater.UpdateAvailable || _iconPreview;
 
     private async Task DownloadAndApplyAsync()
     {
         _applying = true;
-        _face.UpdateProgress = 1;
+        _confirm.Cancel();
+        _face.SetExpression(_confirm.Previous);
         await _updater.DownloadAndApplyAsync().ConfigureAwait(true);
         // Succès = Velopack a relancé l'app (on ne revient pas ici).
-        // Échec = on réarme le geste, la maj reste proposée.
-        _update.Reset();
-        _face.UpdateProgress = 0;
-        _face.UpdateAvailable = _updater.UpdateAvailable;
+        // Échec = la maj reste proposée.
+        UpdateFaceIcon();
         _applying = false;
     }
 
-    private void OnQuitDown()
+    private void OnTapDown()
     {
         // Tout toucher est une activité (réveille sur tablette sans clavier).
         _face.NotifyActivity();
+        // Que des taps simples : pas d'appui long (Windows le promeut en
+        // clic droit sur la tablette). Coin haut-gauche = sortir (toujours),
+        // icône haut-droite = maj (si affichée).
         Point location = PointToClient(MousePosition);
-        _quit.Down(location, Now());
-        if (_updater.UpdateAvailable)
+        if (_confirm.Active)
         {
-            _update.Down(location, ClientSize.Width, Now());
+            (float vx, float vy) = FacePainter.ToView(
+                location.X, location.Y, ClientSize.Width, ClientSize.Height);
+            switch (_confirm.Tap(vx, vy))
+            {
+                case ConfirmTap.Cancelled:
+                    _face.SetExpression(_confirm.Previous);
+                    break;
+                case ConfirmTap.Confirmed:
+                    if (_confirm.Purpose == ConfirmPurpose.Quit)
+                    {
+                        Close();
+                    }
+                    else
+                    {
+                        _face.SetExpression(_confirm.Previous);
+                        if (!_applying)
+                        {
+                            _ = DownloadAndApplyAsync();
+                        }
+                    }
+                    break;
+                case ConfirmTap.Ignored:
+                    break;
+            }
+            return;
         }
-        _holdTimer.Start();
-    }
-
-    private void OnQuitUp()
-    {
-        _quit.Up(Now());
-        _update.Up(Now());
-        _face.UpdateProgress = _update.Progress;
-        _holdTimer.Stop();
-        if (_quit.QuitRequested)
+        if (ConfirmDialog.QuitHit(location))
         {
-            Close();
+            _confirm.Show(_face.CurrentExpression, ConfirmPurpose.Quit);
+            _face.SetExpression(RobotExpression.Confirm);
         }
-        else if (_update.UpdateRequested && !_applying)
+        else if (_face.UpdateAvailable && !_applying
+            && ConfirmDialog.IconHit(location, ClientSize.Width))
         {
-            _ = DownloadAndApplyAsync();
+            _confirm.Show(_face.CurrentExpression, ConfirmPurpose.Update);
+            _face.SetExpression(RobotExpression.Confirm);
         }
     }
 
     /// <summary>
     /// Les touchers/clics arrivent au contrôle sous le doigt (le canvas), pas au
     /// formulaire : ce filtre les intercepte au niveau applicatif pour les
-    /// gestes maintenus (sortie en haut-gauche, mise à jour en haut-droite).
+    /// taps (sortie en haut-gauche, maj en haut-droite puis yeux).
     /// </summary>
-    private sealed class QuitMessageFilter : IMessageFilter
+    private sealed class TapMessageFilter : IMessageFilter
     {
         private const int WM_LBUTTONDOWN = 0x0201;
-        private const int WM_LBUTTONUP = 0x0202;
 
         private readonly MainForm _form;
 
-        public QuitMessageFilter(MainForm form)
+        public TapMessageFilter(MainForm form)
         {
             _form = form;
         }
@@ -267,11 +274,7 @@ internal sealed class MainForm : Form
         {
             if (m.Msg == WM_LBUTTONDOWN)
             {
-                _form.OnQuitDown();
-            }
-            else if (m.Msg == WM_LBUTTONUP)
-            {
-                _form.OnQuitUp();
+                _form.OnTapDown();
             }
             return false;
         }

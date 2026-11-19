@@ -18,6 +18,8 @@ internal enum RobotExpression
     Tired,
     Thinking,
     Shocked,
+    /// <summary>Dialogue de confirmation tactile (X = annuler, ✓ = confirmer).</summary>
+    Confirm,
 }
 
 /// <summary>
@@ -86,6 +88,7 @@ internal sealed class ExpressionController
             "tired" or "sleepy" or "bored" => RobotExpression.Tired,
             "thinking" or "think" => RobotExpression.Thinking,
             "shocked" or "surprised" => RobotExpression.Shocked,
+            "confirm" or "question" => RobotExpression.Confirm,
             _ => null,
         };
         if (parsed is null)

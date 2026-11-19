@@ -1,6 +1,6 @@
-# Rapport de tests BDD — 2026-11-18 22:41
+# Rapport de tests BDD — 2026-11-18 23:29
 
-*26 scénarios : 26 OK, 0 KO.*
+*28 scénarios : 28 OK, 0 KO.*
 
 ## Clignement des yeux — Clignement régulier sur 30 secondes — OK
 
@@ -17,6 +17,10 @@
 ## Expressions du visage — Emotion inconnue ignorée (nimportequoi) — OK
 
 ![Emotion inconnue ignorée (nimportequoi)](Expressions_du_visage_Emotion_inconnue_ignorée__nimportequoi__1.png)
+
+## Expressions du visage — Toutes les expressions (confirm) — OK
+
+![Toutes les expressions (confirm)](Expressions_du_visage_Toutes_les_expressions__confirm__1.png)
 
 ## Expressions du visage — Toutes les expressions (dead) — OK
 
@@ -66,23 +70,25 @@
 
 ![Toutes les expressions (wink)](Expressions_du_visage_Toutes_les_expressions__wink__1.png)
 
-## Mise à jour depuis le NAS — Appui court sans effet — OK
-
-## Mise à jour depuis le NAS — Appui loin de l'icône sans effet — OK
-
-## Mise à jour depuis le NAS — Maj détectée puis installée par appui long — OK
-
 ## Mise à jour depuis le NAS — NAS hors-ligne silencieux — OK
+
+## Mise à jour depuis le NAS — Œil droit confirme et installe — OK
+
+## Mise à jour depuis le NAS — Œil gauche annule — OK
 
 ## Mise à jour depuis le NAS — Paquet corrompu refusé — OK
 
-## Quitter sans clavier — Appui court ne quitte pas — OK
+## Mise à jour depuis le NAS — Tap hors des yeux ignoré — OK
 
-## Quitter sans clavier — Appui hors du coin ne quitte pas — OK
+## Mise à jour depuis le NAS — Tap sur l'icône affiche la confirmation — OK
 
-## Quitter sans clavier — Appui long dans le coin quitte — OK
+## Quitter sans clavier — Œil gauche reste — OK
 
-## Quitter sans clavier — Un appui hors zone annule l'appui précédent — OK
+## Quitter sans clavier — Tap dans le coin puis œil droit quitte — OK
+
+## Quitter sans clavier — Tap hors du coin ne propose pas de sortir — OK
+
+## Quitter sans clavier — Tap sur la bouche ignoré — OK
 
 ## Regard de surveillance — Saccades régulières sur 30 secondes — OK
 

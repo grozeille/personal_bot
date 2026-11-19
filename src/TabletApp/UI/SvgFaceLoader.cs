@@ -24,6 +24,8 @@ internal static class SvgFaceLoader
         Oval,
         BigOval,
         X,
+        XSmall,
+        Check,
         Blade,
         Chevron,
         Dome,
@@ -40,6 +42,7 @@ internal static class SvgFaceLoader
         BigOpen,
         Slant,
         Ring,
+        Dot,
     }
 
     // Composition de chaque émotion : (œil gauche, œil droit, bouche).
@@ -58,6 +61,7 @@ internal static class SvgFaceLoader
         [RobotExpression.Sleep] = (EyeVariant.ArcDown, EyeVariant.ArcDown, MouthVariant.Flat),
         [RobotExpression.Thinking] = (EyeVariant.Oval, EyeVariant.Oval, MouthVariant.Slant),
         [RobotExpression.Shocked] = (EyeVariant.BigOval, EyeVariant.BigOval, MouthVariant.Ring),
+        [RobotExpression.Confirm] = (EyeVariant.XSmall, EyeVariant.Check, MouthVariant.Dot),
     };
 
     private static string EyeFile(string side, EyeVariant variant) => variant switch
@@ -65,6 +69,8 @@ internal static class SvgFaceLoader
         EyeVariant.Oval => $"eye-{side}-oval.svg",
         EyeVariant.BigOval => $"eye-{side}-big-oval.svg",
         EyeVariant.X => $"eye-{side}-x.svg",
+        EyeVariant.XSmall => $"eye-{side}-x-small.svg",
+        EyeVariant.Check => $"eye-{side}-check.svg",
         EyeVariant.Blade => $"eye-{side}-blade.svg",
         EyeVariant.Chevron => $"eye-{side}-chevron.svg",
         EyeVariant.Dome => $"eye-{side}-dome.svg",
@@ -82,6 +88,7 @@ internal static class SvgFaceLoader
         MouthVariant.BigOpen => "mouth-big-open.svg",
         MouthVariant.Slant => "mouth-slant.svg",
         MouthVariant.Ring => "mouth-ring.svg",
+        MouthVariant.Dot => "mouth-dot.svg",
         _ => throw new ArgumentOutOfRangeException(nameof(variant)),
     };
 

@@ -1,6 +1,7 @@
 # Visages — SVG
 
-12 expressions, redessinées à partir de l'image de référence.
+13 visages : 12 expressions redessinées à partir de l'image de référence
++ 1 dialogue de confirmation tactile (aussi jouable touche `C`).
 
 ## Grille commune (ne pas changer d'un fichier à l'autre)
 
@@ -32,6 +33,7 @@
 | 10-sleepy.svg | yeux fermés en arc, bouche plate |
 | 11-thinking.svg | regard vers le haut à gauche, bouche en biais |
 | 12-shocked.svg | yeux dilatés, bouche en O |
+| 13-confirm.svg | œil gauche X (annuler/rester), œil droit coche (confirmer/quitter), bouche point |
 
 Ces fichiers ne sont plus lus par l'application : ils restent la référence
 visuelle d'auteur. Le rendu utilise la bibliothèque de parties ci-dessous.
@@ -55,6 +57,7 @@ ce qui saute la transition entre elles.
 | eye-left-heart | 07 | 7 |
 | eye-left-arc-up | 08 | 8 |
 | eye-left-arc-down | 10 | 10 |
+| eye-left-x-small | 13 | 13 |
 | eye-right-oval | 01 (absorbe le décalage de 5 et 11) | 1, 5, 11 |
 | eye-right-big-oval | 12 | 12 |
 | eye-right-x | 02 | 2 |
@@ -64,12 +67,14 @@ ce qui saute la transition entre elles.
 | eye-right-heart | 07 | 7 |
 | eye-right-arc-up | 08 | 8 |
 | eye-right-arc-down | 10 | 10 |
+| eye-right-check | 13 | 13 |
 | mouth-smile | 01 (03 décalé de 2 px, unifié) | 1, 3, 4, 7, 9 |
 | mouth-flat | 02 (= 10 à l'octet ; 06 plus court/fin/bas, unifié) | 2, 6, 10 |
 | mouth-open-d | 05 | 5 |
 | mouth-big-open | 08 | 8 |
 | mouth-slant | 11 | 11 |
 | mouth-ring | 12 | 12 |
+| mouth-dot | 13 | 13 |
 
 ## Utilisation dans TabletApp
 
@@ -77,7 +82,7 @@ ce qui saute la transition entre elles.
 (`SKPicture` partagés) et compose chaque émotion via sa table de
 composition ; `FacePainter` dessine les 3 calques à 60 FPS.
 Le self-test (`--self-test`) vérifie que les partages tiennent au pixel
-(`FaceEquivalence`) et rend la planche des 12 visages.
+(`FaceEquivalence`) et rend la planche des 13 visages.
 
 ## Glow
 
@@ -108,7 +113,7 @@ dans le chat — le glow est un effet à ajouter au rendu SkiaSharp
 
 - Extraction des 24 parties canoniques dans `parts/` depuis les visages
   ci-dessus (géométrie copiée à l'identique du donneur, titre du fichier
-  = donneur + utilisateurs).
+  = donneur + utilisateurs), + 3 pour le visage 13 (27 au total).
 - Unifications : ovales (01 absorbe 05/09/11, positions incluses),
   chevron droit (04 absorbe 09), sourire (01 absorbe 03), bouche plate
   (02 absorbe 06).
