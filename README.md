@@ -40,6 +40,23 @@ sur GitHub (pense à les committer). Tâche VS Code : "tests + rapport".
 - Appui maintenu 3 s dans le coin haut-gauche : quitter (tablette tactile).
 - `S` / `W` : s'endormir / se réveiller (provisoire, en attendant le wake word).
 - `1`–`9`, `0` : comme le dessin de référence — neutre, mort, méchant, tournis, joie, fatigue, amour, rire, clin d'œil, dormir. `F11`/`F12` : réflexion, surprise.
+- `U` : forcer une vérification de mise à jour (PC de dev).
+
+## Mises à jour (Velopack + NAS)
+
+Le robot vérifie `P:\RobotMaj` au démarrage puis toutes les 5 minutes
+(silencieux si le NAS est hors-ligne). Si une maj existe, une icône
+« flèches circulaires » (`docs/icons/update.svg`) apparaît en haut à droite :
+un appui maintenu de **3 secondes** dessus télécharge, installe et redémarre.
+
+```powershell
+# Publier une maj sur le NAS (version croissante obligatoire) :
+.\Publier-Maj.ps1 -Version 1.0.1
+```
+
+Première install sur la tablette : lancer `P:\RobotMaj\Setup.exe` une fois,
+les maj suivantes sont 100 % autonomes. La source et l'intervalle se règlent
+dans `appsettings.json` (section `Update`). Scénarios BDD : `Maj.feature`.
 
 ## Clé API Gemini (secret — jamais dans le dépôt)
 

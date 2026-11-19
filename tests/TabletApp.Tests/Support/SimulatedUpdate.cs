@@ -1,0 +1,118 @@
+using System.Drawing;
+using SkiaSharp;
+using TabletApp.UI;
+using TabletApp.Update;
+
+namespace TabletApp.Tests.Support;
+
+/// <summary>
+/// Source de maj factice : version proposée, mode hors-ligne (le check lève),
+/// mode corrompu (l'installation lève, comme un hash Velopack invalide).
+/// </summary>
+internal sealed class FakeUpdateSource : IUpdateSource
+{
+    public string SourcePath => "(test)";
+
+    public string? AvailableVersion { get; set; }
+
+    public bool Offline { get; set; }
+
+    public bool Corrupt { get; set; }
+
+    public bool Applied { get; private set; }
+
+    public Task<string?> CheckForUpdateAsync(CancellationToken ct)
+    {
+        if (Offline)
+        {
+            throw new IOException("NAS hors-ligne (test).");
+        }
+        return Task.FromResult(AvailableVersion);
+    }
+
+    public Task DownloadAndApplyAsync(Action<int>? progress, CancellationToken ct)
+    {
+        if (Corrupt)
+        {
+            throw new InvalidDataException("Hash invalide (test).");
+        }
+        progress?.Invoke(100);
+        Applied = true;
+        return Task.CompletedTask;
+    }
+}
+
+/// <summary>
+/// Mise à jour simulée : horloge + <c>RobotUpdater</c> sur source factice +
+/// <c>UpdateGesture</c> (écran 800 px de large) pour assertions.
+/// </summary>
+internal sealed class SimulatedUpdate
+{
+    public const float ScreenWidth = 800;
+
+    public FakeUpdateSource Source { get; } = new();
+
+    public RobotUpdater Updater { get; }
+
+    public UpdateGesture Gesture { get; } = new();
+
+    public TimeSpan Now { get; private set; }
+
+    public string CurrentVersion { get; private set; } = "1.0.0";
+
+    public SimulatedUpdate()
+    {
+        Updater = new RobotUpdater(Source);
+    }
+
+    public void Down(float x, float y) =>
+        Gesture.Down(new PointF(x, y), ScreenWidth, Now);
+
+    public void Hold(TimeSpan duration)
+    {
+        TimeSpan end = Now + duration;
+        while (Now < end)
+        {
+            Gesture.Tick(Now);
+            Now += TimeSpan.FromMilliseconds(100);
+        }
+        Gesture.Tick(Now);
+    }
+
+    public void Release() => Gesture.Up(Now);
+
+    public async Task InstallAsync()
+    {
+        bool ok = await Updater.DownloadAndApplyAsync().ConfigureAwait(false);
+        if (ok && Source.Applied && Updater.PendingVersion is not null)
+        {
+            CurrentVersion = Updater.PendingVersion;
+        }
+    }
+
+    /// <summary>
+    /// Vrai si le coin haut-droit rendu contient des pixels cyan (l'icône),
+    /// en excluant le cadre blanc du visage (rouge élevé).
+    /// </summary>
+    public static bool IconVisibleOffscreen(bool updateAvailable)
+    {
+        using var bitmap = new SKBitmap(800, 600);
+        using var canvas = new SKCanvas(bitmap);
+        FacePainter.DrawFace(
+            canvas, 800, 600, 1.0, 0, 0, 0, timeSeconds: 0.49,
+            RobotExpression.Neutral, RobotExpression.Neutral, 1.0, awake: true,
+            updateAvailable: updateAvailable);
+        for (int y = 0; y < 100; y++)
+        {
+            for (int x = 700; x < 800; x++)
+            {
+                SKColor p = bitmap.GetPixel(x, y);
+                if (p.Red is >= 100 and < 180 && p.Green > 180 && p.Blue > 180)
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+}

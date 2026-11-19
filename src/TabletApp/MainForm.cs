@@ -2,6 +2,7 @@ using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using TabletApp.UI;
+using TabletApp.Update;
 
 namespace TabletApp;
 
@@ -24,9 +25,13 @@ internal sealed class MainForm : Form
 
     private readonly RobotFaceRenderer _face;
     private readonly System.Windows.Forms.Timer _titleTimer;
-    private readonly System.Windows.Forms.Timer _quitTimer;
+    private readonly System.Windows.Forms.Timer _holdTimer;
+    private readonly System.Windows.Forms.Timer _updateTimer;
     private readonly QuitGesture _quit = new();
+    private readonly UpdateGesture _update = new();
+    private readonly RobotUpdater _updater;
     private readonly QuitMessageFilter _quitFilter;
+    private bool _applying;
 
     // Empêche la mise en veille de l'écran / du système (tête de robot allumée en continu).
     [DllImport("kernel32.dll")]
@@ -75,36 +80,66 @@ internal sealed class MainForm : Form
             {
                 _face.SetExpression(RobotExpression.Shocked);
             }
+            else if (e.KeyCode == Keys.U)
+            {
+                // Dev : forcer une vérification de maj (le robot le fait seul toutes les 5 min).
+                _ = CheckForUpdatesAsync();
+            }
             else if (Digit(e.KeyCode) is { } digit)
             {
                 _face.SetExpression(ExpressionKeys[digit]);
             }
         };
 
+        UpdateOptions options = UpdateOptions.Load();
+        _updater = new RobotUpdater(new VelopackUpdateSource(options.Source));
+
         _titleTimer = new System.Windows.Forms.Timer { Interval = 1000 };
-        _titleTimer.Tick += (_, _) => Text = $"Robot Companion — {_face.Fps} FPS";
+        _titleTimer.Tick += (_, _) =>
+            Text = $"Robot Companion — {_face.Fps} FPS"
+                + (_updater.UpdateAvailable ? " — MAJ !" : "");
         _titleTimer.Start();
 
-        _quitTimer = new System.Windows.Forms.Timer { Interval = 250 };
-        _quitTimer.Tick += (_, _) =>
+        _holdTimer = new System.Windows.Forms.Timer { Interval = 100 };
+        _holdTimer.Tick += (_, _) =>
         {
             if (!Control.MouseButtons.HasFlag(MouseButtons.Left))
             {
-                // Doigt relevé (ou UP perdu) : on se désarme au lieu de quitter plus tard.
-                _quitTimer.Stop();
+                // Doigt relevé (ou UP perdu) : on désarme les deux gestes
+                // au lieu de quitter / mettre à jour plus tard.
+                _holdTimer.Stop();
                 _quit.Reset();
+                _update.Reset();
+                _face.UpdateProgress = 0;
                 return;
             }
             _quit.Tick(Now());
+            _update.Tick(Now());
+            _face.UpdateProgress = _update.Progress;
             if (_quit.QuitRequested)
             {
-                _quitTimer.Stop();
+                _holdTimer.Stop();
                 Close();
+            }
+            else if (_update.UpdateRequested && !_applying)
+            {
+                _holdTimer.Stop();
+                _ = DownloadAndApplyAsync();
             }
         };
 
+        _updateTimer = new System.Windows.Forms.Timer
+        {
+            Interval = Math.Max(60_000, (int)options.CheckInterval.TotalMilliseconds),
+        };
+        _updateTimer.Tick += (_, _) => _ = CheckForUpdatesAsync();
+        _updateTimer.Start();
+
         _quitFilter = new QuitMessageFilter(this);
         Application.AddMessageFilter(_quitFilter);
+
+        // Premier contrôle peu après le démarrage (silencieux si NAS hors-ligne).
+        Shown += (_, _) => _ = CheckForUpdatesAsync();
     }
 
     protected override void OnShown(EventArgs e)
@@ -146,25 +181,65 @@ internal sealed class MainForm : Form
         _ => null,
     };
 
+    private async Task CheckForUpdatesAsync()
+    {
+        if (_applying)
+        {
+            return;
+        }
+        await _updater.CheckAsync().ConfigureAwait(true);
+        _face.UpdateAvailable = _updater.UpdateAvailable;
+        if (!_updater.UpdateAvailable)
+        {
+            _update.Reset();
+            _face.UpdateProgress = 0;
+        }
+    }
+
+    private async Task DownloadAndApplyAsync()
+    {
+        _applying = true;
+        _face.UpdateProgress = 1;
+        await _updater.DownloadAndApplyAsync().ConfigureAwait(true);
+        // Succès = Velopack a relancé l'app (on ne revient pas ici).
+        // Échec = on réarme le geste, la maj reste proposée.
+        _update.Reset();
+        _face.UpdateProgress = 0;
+        _face.UpdateAvailable = _updater.UpdateAvailable;
+        _applying = false;
+    }
+
     private void OnQuitDown()
     {
-        _quit.Down(PointToClient(MousePosition), Now());
-        _quitTimer.Start();
+        Point location = PointToClient(MousePosition);
+        _quit.Down(location, Now());
+        if (_updater.UpdateAvailable)
+        {
+            _update.Down(location, ClientSize.Width, Now());
+        }
+        _holdTimer.Start();
     }
 
     private void OnQuitUp()
     {
         _quit.Up(Now());
-        _quitTimer.Stop();
+        _update.Up(Now());
+        _face.UpdateProgress = _update.Progress;
+        _holdTimer.Stop();
         if (_quit.QuitRequested)
         {
             Close();
+        }
+        else if (_update.UpdateRequested && !_applying)
+        {
+            _ = DownloadAndApplyAsync();
         }
     }
 
     /// <summary>
     /// Les touchers/clics arrivent au contrôle sous le doigt (le canvas), pas au
-    /// formulaire : ce filtre les intercepte au niveau applicatif pour le geste de sortie.
+    /// formulaire : ce filtre les intercepte au niveau applicatif pour les
+    /// gestes maintenus (sortie en haut-gauche, mise à jour en haut-droite).
     /// </summary>
     private sealed class QuitMessageFilter : IMessageFilter
     {

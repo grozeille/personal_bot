@@ -1,6 +1,10 @@
+using System.Drawing;
 using System.Runtime.InteropServices;
 using SkiaSharp;
 using TabletApp.UI;
+using TabletApp.Update;
+using Velopack;
+using Velopack.Sources;
 
 namespace TabletApp;
 
@@ -48,6 +52,7 @@ internal static class SelfTest
         RenderFrames(log);
         RenderExpressionSheet(log);
         RenderTransitionFrame(log);
+        RenderUpdateFrame(log);
         log.Add(ok ? "SELF-TEST: PASS" : "SELF-TEST: FAIL");
         foreach (string line in log)
         {
@@ -375,6 +380,360 @@ internal static class SelfTest
             data.SaveTo(stream);
             log.Add($"Frame '{name}' -> {path}");
         }
+    }
+
+    private static void RenderUpdateFrame(List<string> log)
+    {
+        // Icône de maj en haut à droite + anneau à 65 % (appui en cours).
+        using var bitmap = new SKBitmap(800, 600);
+        using var canvas = new SKCanvas(bitmap);
+        FacePainter.DrawFace(
+            canvas, 800, 600, 1.0, 0, 0, 0, 0.49,
+            RobotExpression.Neutral, RobotExpression.Neutral, 1.0, awake: true,
+            updateAvailable: true, updateProgress: 0.65);
+        using var image = SKImage.FromBitmap(bitmap);
+        using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+        string path = Path.Combine(Path.GetTempPath(), "tabletapp-frame-update.png");
+        using var stream = File.OpenWrite(path);
+        data.SaveTo(stream);
+        log.Add($"Frame 'update' -> {path}");
+    }
+
+    /// <summary>
+    /// Sonde de validation du cycle de maj (<c>--self-test-update &lt;flux&gt;</c>) :
+    /// exerce le vrai moteur Velopack contre un dossier de flux (local ou NAS),
+    /// sans jamais appliquer ni redémarrer : détection, téléchargement réel
+    /// (hash vérifié par le moteur), refus d'un paquet corrompu, dossier
+    /// absent silencieux, gestes d'appui et animation de l'icône. Les frames
+    /// de preuve sont copiées dans %TEMP%\tabletapp-probe-*.png.
+    /// Usage : <c>dotnet run --project src/TabletApp -- --self-test-update P:\RobotMaj</c>.
+    /// Depuis l'app installée (Setup.exe), ajouter <c>--apply-and-restart</c>
+    /// pour la jambe complète : la maj est appliquée et l'app redémarre sur
+    /// la sonde <c>--post-restart</c> (aucune UI, preuve dans
+    /// %TEMP%\tabletapp-update-probe-restart.txt).
+    /// Note : le moteur applique au démarrage un paquet stocké par un run
+    /// précédent — relancez depuis une install fraîche pour une preuve exacte.
+    /// </summary>
+    public static bool RunUpdateProbe(string feedDir, bool applyAndRestart = false)
+    {
+        AttachConsole(-1); // ATTACH_PARENT_PROCESS : sortie dans le terminal appelant.
+        var log = new List<string>();
+        // Corrupt avant Download : la jambe corrompue doit trouver un cache
+        // de paquets vierge, sinon elle réutiliserait le paquet sain déjà
+        // téléchargé au lieu du paquet trafiqué.
+        bool ok = ProbeDetect(feedDir, log, out string? version)
+            & ProbeCorrupt(feedDir, log)
+            & ProbeDownload(feedDir, version, log)
+            & ProbeOffline(log)
+            & ProbeGestures(log)
+            & ProbeIconFrames(log);
+        if (ok && applyAndRestart && version is not null)
+        {
+            ProbeApplyRestart(feedDir, version, log); // ne revient pas (redémarre)
+        }
+        log.Add(ok ? "UPDATE-PROBE: PASS" : "UPDATE-PROBE: FAIL");
+        WriteProbeLog(log);
+        return ok;
+    }
+
+    /// <summary>
+    /// Vérification post-redémarrage : la version courante est la version
+    /// appliquée et le flux ne propose plus rien. Preuve dans
+    /// %TEMP%\tabletapp-update-probe-restart.txt.
+    /// </summary>
+    public static bool RunUpdateProbePostRestart(string feedDir, string expected)
+    {
+        AttachConsole(-1);
+        var log = new List<string>();
+        bool ok;
+        try
+        {
+            var manager = new UpdateManager(new SimpleFileSource(new DirectoryInfo(feedDir)));
+            string current = manager.CurrentVersion?.ToString() ?? "(inconnue)";
+            UpdateInfo? rest = manager.CheckForUpdatesAsync().GetAwaiter().GetResult();
+            ok = current == expected && rest is null;
+            log.Add($"Probe/Restart: version courante={current} (attendue={expected}), " +
+                $"reste à jour={rest is null} -> {(ok ? "OK" : "KO")}");
+        }
+        catch (Exception ex)
+        {
+            ok = false;
+            log.Add($"Probe/Restart: {ex.GetType().Name} {ex.Message} -> KO");
+        }
+        log.Add(ok ? "UPDATE-PROBE-RESTART: PASS" : "UPDATE-PROBE-RESTART: FAIL");
+        foreach (string line in log)
+        {
+            Console.WriteLine(line);
+        }
+        File.WriteAllText(
+            Path.Combine(Path.GetTempPath(), "tabletapp-update-probe-restart.txt"),
+            string.Join(Environment.NewLine, log) + Environment.NewLine);
+        return ok;
+    }
+
+    private static void ProbeApplyRestart(string feedDir, string version, List<string> log)
+    {
+        var manager = new UpdateManager(new SimpleFileSource(new DirectoryInfo(feedDir)));
+        UpdateInfo? info = manager.CheckForUpdatesAsync().GetAwaiter().GetResult();
+        if (info is null)
+        {
+            log.Add("Probe/Apply: cible perdue avant application -> KO");
+            log.Add("UPDATE-PROBE: FAIL");
+            WriteProbeLog(log);
+            Environment.Exit(1);
+            return;
+        }
+        log.Add($"Probe/Apply: application de {info.TargetFullRelease.Version} " +
+            $"(attendue={version}) + redémarrage...");
+        WriteProbeLog(log); // Le processus ne revient pas : journal avant de partir.
+        manager.ApplyUpdatesAndRestart(info,
+            new[] { "--self-test-update", feedDir, "--post-restart", version });
+    }
+
+    private static void WriteProbeLog(List<string> log)
+    {
+        foreach (string line in log)
+        {
+            Console.WriteLine(line);
+        }
+        File.WriteAllText(
+            Path.Combine(Path.GetTempPath(), "tabletapp-update-probe.txt"),
+            string.Join(Environment.NewLine, log) + Environment.NewLine);
+    }
+
+    private static bool ProbeDetect(string feedDir, List<string> log, out string? version)
+    {
+        var updater = new RobotUpdater(new VelopackUpdateSource(feedDir));
+        updater.CheckAsync().GetAwaiter().GetResult();
+        version = updater.PendingVersion;
+        bool detected = updater.UpdateAvailable && version is not null;
+        if (!detected)
+        {
+            // Diagnostic : moteur inutilisable hors install Velopack ?
+            string cause = "aucune maj dans le flux";
+            try
+            {
+                var manager = new UpdateManager(new SimpleFileSource(new DirectoryInfo(feedDir)));
+                UpdateInfo? info = manager.CheckForUpdatesAsync().GetAwaiter().GetResult();
+                cause = info is null
+                    ? "flux à jour (moteur OK)"
+                    : "incohérence détecteur/moteur";
+            }
+            catch (Exception ex)
+            {
+                cause = $"{ex.GetType().Name} — relancez depuis l'app installée " +
+                    "(Setup.exe) : le moteur Velopack exige une installation";
+            }
+            log.Add($"Probe/Detect: flux '{feedDir}' -> {cause} -> KO");
+            return false;
+        }
+        log.Add($"Probe/Detect: flux '{feedDir}' -> maj {version} proposée, " +
+            "icône affichée -> OK");
+        return true;
+    }
+
+    private static bool ProbeDownload(string feedDir, string? version, List<string> log)
+    {
+        // Téléchargement réel via le moteur (le hash est vérifié par Velopack),
+        // sans appliquer : aucun redémarrage pendant la sonde.
+        try
+        {
+            var manager = new UpdateManager(new SimpleFileSource(new DirectoryInfo(feedDir)));
+            UpdateInfo? info = manager.CheckForUpdatesAsync().GetAwaiter().GetResult();
+            if (info is null)
+            {
+                log.Add("Probe/Download: moteur sans cible alors que la détection a réussi -> KO");
+                return false;
+            }
+            int percent = 0;
+            manager.DownloadUpdatesAsync(info, p => percent = p, default)
+                .GetAwaiter().GetResult();
+            bool match = version is not null
+                && info.TargetFullRelease.Version.ToString() == version;
+            log.Add($"Probe/Download: {info.TargetFullRelease.FileName} " +
+                $"({info.TargetFullRelease.Size} octets, {percent} %) téléchargé, " +
+                $"version {version} concordante={match} -> " +
+                (match ? "OK" : "KO"));
+            return match;
+        }
+        catch (Exception ex)
+        {
+            log.Add($"Probe/Download: {ex.GetType().Name} {ex.Message} -> KO");
+            return false;
+        }
+    }
+
+    private static bool ProbeCorrupt(string feedDir, List<string> log)
+    {
+        // Copie du flux avec un paquet trafiqué (index intact) : le
+        // téléchargement local ne vérifie pas le hash, c'est l'application qui
+        // doit refuser le paquet (hash invalide) et conserver la version.
+        string copy = Path.Combine(
+            Path.GetTempPath(), "robot-maj-corrompue-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(copy);
+            foreach (string file in Directory.GetFiles(feedDir))
+            {
+                File.Copy(file, Path.Combine(copy, Path.GetFileName(file)));
+            }
+            // Trafique tous les paquets (full + delta) : quel que soit le chemin
+            // choisi par le moteur, l'application doit refuser le hash invalide.
+            string[] nupkgs = Directory.GetFiles(copy, "*.nupkg");
+            if (nupkgs.Length == 0)
+            {
+                log.Add("Probe/Corrupt: aucun nupkg dans le flux -> KO");
+                return false;
+            }
+            foreach (string nupkg in nupkgs)
+            {
+                byte[] bytes = File.ReadAllBytes(nupkg);
+                bytes[bytes.Length / 2] ^= 0xFF;
+                File.WriteAllBytes(nupkg, bytes);
+            }
+
+            var manager = new UpdateManager(new SimpleFileSource(new DirectoryInfo(copy)));
+            UpdateInfo? info = manager.CheckForUpdatesAsync().GetAwaiter().GetResult();
+            if (info is null)
+            {
+                log.Add("Probe/Corrupt: flux corrompu sans cible -> KO");
+                return false;
+            }
+            string before = manager.CurrentVersion?.ToString() ?? "?";
+            try
+            {
+                manager.DownloadUpdatesAsync(info, null, default).GetAwaiter().GetResult();
+            }
+            catch (Exception downloadEx)
+            {
+                // Cas observé : ChecksumFailedException pendant le transfert.
+                return ReportCorruptRefused(log, copy, before, "téléchargement", downloadEx);
+            }
+            try
+            {
+                manager.ApplyUpdatesAndRestart(info);
+                log.Add("Probe/Corrupt: paquet trafiqué APPLIQUÉ -> KO");
+                return false;
+            }
+            catch (Exception applyEx)
+            {
+                return ReportCorruptRefused(log, copy, before, "application", applyEx);
+            }
+        }
+        catch (Exception ex)
+        {
+            log.Add($"Probe/Corrupt: {ex.GetType().Name} {ex.Message} -> KO");
+            return false;
+        }
+        finally
+        {
+            try { Directory.Delete(copy, recursive: true); } catch { }
+        }
+    }
+
+    private static bool ReportCorruptRefused(
+        List<string> log, string feedCopy, string before, string stage, Exception ex)
+    {
+        var check = new UpdateManager(new SimpleFileSource(new DirectoryInfo(feedCopy)));
+        string after = check.CurrentVersion?.ToString() ?? "?";
+        bool conserved = after == before;
+        log.Add($"Probe/Corrupt: paquet trafiqué refusé au {stage} " +
+            $"({ex.GetType().Name}), version {before} conservée={conserved} -> " +
+            (conserved ? "OK" : "KO"));
+        return conserved;
+    }
+
+    private static bool ProbeOffline(List<string> log)
+    {
+        // Dossier absent : silencieux, aucune maj, aucune exception.
+        string missing = Path.Combine(
+            Path.GetTempPath(), "robot-maj-absent-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var updater = new RobotUpdater(new VelopackUpdateSource(missing));
+            updater.CheckAsync().GetAwaiter().GetResult();
+            bool silent = !updater.UpdateAvailable && updater.PendingVersion is null;
+            log.Add($"Probe/Offline: dossier absent -> silencieux={silent} -> " +
+                (silent ? "OK" : "KO"));
+            return silent;
+        }
+        catch (Exception ex)
+        {
+            log.Add($"Probe/Offline: {ex.GetType().Name} {ex.Message} -> KO");
+            return false;
+        }
+    }
+
+    private static bool ProbeGestures(List<string> log)
+    {
+        // Appui 3 s sur l'icône -> demandé ; appui court -> sans effet ;
+        // appui hors zone (même maintenu) -> sans effet.
+        var hold = new UpdateGesture();
+        hold.Down(new PointF(790, 10), 800, TimeSpan.Zero);
+        hold.Tick(TimeSpan.FromSeconds(3));
+        bool holdOk = hold.UpdateRequested && hold.Progress == 1.0;
+
+        var tap = new UpdateGesture();
+        tap.Down(new PointF(790, 10), 800, TimeSpan.Zero);
+        tap.Tick(TimeSpan.FromSeconds(1));
+        tap.Up(TimeSpan.FromSeconds(1));
+        bool tapOk = !tap.UpdateRequested && tap.Progress == 0;
+
+        var away = new UpdateGesture();
+        away.Down(new PointF(400, 300), 800, TimeSpan.Zero);
+        away.Tick(TimeSpan.FromSeconds(5));
+        away.Up(TimeSpan.FromSeconds(5));
+        bool awayOk = !away.UpdateRequested && away.Progress == 0;
+
+        bool ok = holdOk && tapOk && awayOk;
+        log.Add($"Probe/Gestures: appui 3 s={holdOk}, court sans effet={tapOk}, " +
+            $"hors zone sans effet={awayOk} -> {(ok ? "OK" : "KO")}");
+        return ok;
+    }
+
+    private static bool ProbeIconFrames(List<string> log)
+    {
+        // Pulsation multi-frames (plusieurs rendus distincts au repos),
+        // anneau réactif (0 / 0,5 / 1 distincts), icône absente sans maj.
+        var pulses = Enumerable.Range(0, 8)
+            .Select(i => Convert.ToHexString(RenderUpdateBytes(i * 0.25, 0, available: true)))
+            .Distinct().Count();
+        byte[] ring0 = RenderUpdateBytes(0.49, 0, available: true);
+        byte[] ringHalf = RenderUpdateBytes(0.49, 0.5, available: true);
+        byte[] ringFull = RenderUpdateBytes(0.49, 1, available: true);
+        bool ringOk = !ring0.SequenceEqual(ringHalf)
+            && !ringHalf.SequenceEqual(ringFull)
+            && !ring0.SequenceEqual(ringFull);
+        byte[] none = RenderUpdateBytes(0.49, 0, available: false);
+        bool gatedOk = !ring0.SequenceEqual(none);
+        bool pulseOk = pulses >= 4;
+
+        SaveProbeFrame("rest", 0.49, 0);
+        SaveProbeFrame("hold", 0.49, 0.65);
+
+        bool ok = pulseOk && ringOk && gatedOk;
+        log.Add($"Probe/Icon: {pulses}/8 frames pulsées distinctes, anneau 0/50/100 " +
+            $"distinct={ringOk}, masquée sans maj={gatedOk} -> {(ok ? "OK" : "KO")}");
+        return ok;
+    }
+
+    private static byte[] RenderUpdateBytes(double time, double progress, bool available)
+    {
+        using var bitmap = new SKBitmap(800, 600);
+        using var canvas = new SKCanvas(bitmap);
+        FacePainter.DrawFace(
+            canvas, 800, 600, 1.0, 0, 0, 0, time,
+            RobotExpression.Neutral, RobotExpression.Neutral, 1.0, awake: true,
+            updateAvailable: available, updateProgress: progress);
+        using var image = SKImage.FromBitmap(bitmap);
+        using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+        return data.ToArray();
+    }
+
+    private static void SaveProbeFrame(string name, double time, double progress)
+    {
+        byte[] bytes = RenderUpdateBytes(time, progress, available: true);
+        File.WriteAllBytes(Path.Combine(Path.GetTempPath(), $"tabletapp-probe-{name}.png"), bytes);
     }
 
     private static void RenderExpressionSheet(List<string> log)

@@ -29,6 +29,12 @@ internal sealed class RobotFaceRenderer : UserControl
 
     public int Fps { get; private set; }
 
+    /// <summary>Maj disponible : affiche l'icône en haut à droite.</summary>
+    public bool UpdateAvailable { get; set; }
+
+    /// <summary>Progression 0..1 de l'appui sur l'icône (anneau).</summary>
+    public double UpdateProgress { get; set; }
+
     public RobotFaceRenderer()
     {
         BackColor = Color.Black;
@@ -102,7 +108,8 @@ internal sealed class RobotFaceRenderer : UserControl
             e.Surface.Canvas, e.Info.Width, e.Info.Height,
             open, _gaze.X, _gaze.Y, _sleep.Yawn, now.TotalSeconds,
             _expression.Current, _expression.Previous, _expression.Progress,
-            mouthOverride, _sleep.IsAwake);
+            mouthOverride, _sleep.IsAwake,
+            updateAvailable: UpdateAvailable, updateProgress: UpdateProgress);
     }
 
     private void UpdateFps(TimeSpan now)

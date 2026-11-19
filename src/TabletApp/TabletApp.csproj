@@ -28,12 +28,16 @@
     <EmbeddedResource Include="..\..\docs\faces\parts\*.svg">
       <LogicalName>TabletApp.Faces.Parts.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <EmbeddedResource Include="..\..\docs\icons\*.svg">
+      <LogicalName>TabletApp.Icons.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="SkiaSharp" Version="4.157.0" />
     <PackageReference Include="SkiaSharp.Views.WindowsForms" Version="4.157.0" />
     <PackageReference Include="Svg.Skia" Version="5.2.3" />
+    <PackageReference Include="Velopack" Version="1.2.161" />
   </ItemGroup>
 
 </Project>

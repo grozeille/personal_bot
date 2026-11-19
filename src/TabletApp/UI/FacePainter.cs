@@ -36,7 +36,8 @@ internal static class FacePainter
         double openAmount, double gazeX, double gazeY,
         double yawn, double timeSeconds,
         RobotExpression expression, RobotExpression previous, double progress,
-        MouthOverride? mouthOverride = null, bool awake = true, bool enableGlow = true)
+        MouthOverride? mouthOverride = null, bool awake = true, bool enableGlow = true,
+        bool updateAvailable = false, double updateProgress = 0)
     {
         canvas.Clear(SKColors.Black);
         var face = SvgFaceLoader.For(expression);
@@ -92,6 +93,12 @@ internal static class FacePainter
                 ex * nextGaze, ey * nextGaze, ex * prevGaze, ey * prevGaze,
                 squeeze, squash, 550f, face.RightPivotY,
                 old?.RightPivotY ?? face.RightPivotY, progress, glowPaint);
+
+            if (updateAvailable)
+            {
+                float size = Math.Min(width, height) * 0.09f;
+                UpdateIcon.Draw(canvas, width - 14, 14, size, updateProgress, timeSeconds);
+            }
         }
     }
 
