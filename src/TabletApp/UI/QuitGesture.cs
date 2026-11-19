@@ -22,11 +22,20 @@ internal sealed class QuitGesture
 
     public void Down(PointF location, TimeSpan now)
     {
+        // Tout nouvel appui repart de zéro (un UP perdu ne doit jamais armer un futur appui).
+        _downAt = null;
+        QuitRequested = false;
         if (location.X >= 0 && location.Y >= 0
             && location.X < _zoneSize && location.Y < _zoneSize)
         {
             _downAt = now;
         }
+    }
+
+    public void Reset()
+    {
+        _downAt = null;
+        QuitRequested = false;
     }
 
     public void Up(TimeSpan now)

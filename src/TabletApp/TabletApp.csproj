@@ -12,6 +12,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>TabletApp</AssemblyName>
     <RootNamespace>TabletApp</RootNamespace>
+    <ApplicationIcon>app.ico</ApplicationIcon>
     <UserSecretsId>2845a56a-79cc-4c30-b8b0-654897b03861</UserSecretsId>
   </PropertyGroup>
 

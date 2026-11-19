@@ -13,6 +13,12 @@ internal static class Program
             return;
         }
 
+        if (args.Contains("--perf"))
+        {
+            Environment.Exit(SelfTest.Perf() ? 0 : 1);
+            return;
+        }
+
         ApplicationConfiguration.Initialize();
         Application.Run(new MainForm());
     }

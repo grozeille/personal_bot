@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Text;
 using SkiaSharp;
 using TabletApp.UI;
 
@@ -354,4 +355,54 @@ internal static class SelfTest
         data.SaveTo(stream);
         log.Add($"Planche expressions -> {path}");
     }
+
+    /// <summary>
+    /// Diagnostic perf : temps moyen/p95 d'une frame par scénario et par taille,
+    /// pour chiffrer le coût réel (glow, transition) avant d'optimiser.
+    /// </summary>
+    public static bool Perf()
+    {
+        AttachConsole(-1);
+        var log = new List<string>();
+        var sizes = new (int W, int H, string Name)[]
+        {
+            (800, 600, "test"),
+            (2752, 1152, "PC-fullscreen"),
+            (800, 1280, "tablette"),
+        };
+        var scenarios = new (string Name, bool Glow)[]
+        {
+            ("repos-neutre", true),
+            ("repos-sans-glow", false),
+        };
+        foreach (var (w, h, name) in sizes)
+        {
+            using var bitmap = new SKBitmap(w, h);
+            using var canvas = new SKCanvas(bitmap);
+            foreach (var (sname, glow) in scenarios)
+            {
+                for (int i = 0; i < 10; i++)
+                {
+                    FacePainter.DrawFace(canvas, w, h, 1.0, 0, 0, 0, 0,
+                        RobotExpression.Neutral, enableGlow: glow);
+                }
+                var sw = new List<double>();
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                for (int i = 0; i < 120; i++)
+                {
+                    watch.Restart();
+                    FacePainter.DrawFace(canvas, w, h, 1.0, 0, 0, 0, 0,
+                        RobotExpression.Neutral, enableGlow: glow);
+                    sw.Add(watch.Elapsed.TotalMilliseconds);
+                }
+                sw.Sort();
+                log.Add($"{name} {w}x{h} {sname}: moy {sw.Average():F1} ms, p95 {sw[(int)(sw.Count * 0.95)]:F1} ms");
+            }
+        }
+        File.WriteAllText(
+            Path.Combine(Path.GetTempPath(), "tabletapp-perf.txt"),
+            string.Join(Environment.NewLine, log) + Environment.NewLine);
+        return true;
+    }
+
 }

@@ -1,6 +1,6 @@
-# Rapport de tests BDD — 2026-11-18 21:04
+# Rapport de tests BDD — 2026-11-18 21:39
 
-*19 scénarios : 19 OK, 0 KO.*
+*20 scénarios : 20 OK, 0 KO.*
 
 ## Clignement des yeux — Clignement régulier sur 30 secondes — OK
 
@@ -67,6 +67,8 @@
 ## Quitter sans clavier — Appui hors du coin ne quitte pas — OK
 
 ## Quitter sans clavier — Appui long dans le coin quitte — OK
+
+## Quitter sans clavier — Un appui hors zone annule l'appui précédent — OK
 
 ## Regard de surveillance — Saccades régulières sur 30 secondes — OK
 

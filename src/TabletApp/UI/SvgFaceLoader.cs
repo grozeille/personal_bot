@@ -9,7 +9,9 @@ namespace TabletApp.UI;
 /// <summary>
 /// Charge les visages SVG embarqués (docs/faces, un par émotion) et les
 /// découpe en 2 calques (groupes id="eyes*"/id="mouth*") mis en cache pour le
-/// rendu 60 FPS. Échec rapide et explicite si un fichier ou un groupe manque.
+/// rendu 60 FPS. Mesure aussi les pivots (centre vertical des yeux/bouche)
+/// depuis le rendu réel, pour survivre aux retouches de mise en page.
+/// Échec rapide et explicite si un fichier ou un groupe manque.
 /// Les SKSvg sont conservés en cache avec leurs SKPicture (durée de vie = app).
 /// </summary>
 internal static class SvgFaceLoader
@@ -35,6 +37,8 @@ internal static class SvgFaceLoader
     {
         public required SKSvg EyesSvg;
         public required SKSvg MouthSvg;
+        public required float EyePivotY;
+        public required float MouthPivotY;
         public SKPicture Eyes => EyesSvg.Picture!;
         public SKPicture Mouth => MouthSvg.Picture!;
     }
@@ -60,10 +64,21 @@ internal static class SvgFaceLoader
                 $"Ressource SVG introuvable : {resource} (docs/faces/{file} non embarquée ?).");
         var doc = XDocument.Load(stream);
         GuardGroups(doc, file);
+        var eyes = LoadGroups(doc, "eyes", file);
+        var mouth = LoadGroups(doc, "mouth", file);
+        float eyeY = CentroidY(eyes.Picture!, file, "eyes");
+        float mouthY = CentroidY(mouth.Picture!, file, "mouth");
+        if (eyeY is < 150 or > 400 || mouthY is < 250 or > 500 || mouthY <= eyeY)
+        {
+            throw new InvalidDataException(
+                $"Géométrie inattendue dans {file} (yeux y={eyeY:F0}, bouche y={mouthY:F0}).");
+        }
         return new FaceLayers
         {
-            EyesSvg = LoadGroups(doc, "eyes", file),
-            MouthSvg = LoadGroups(doc, "mouth", file),
+            EyesSvg = eyes,
+            MouthSvg = mouth,
+            EyePivotY = eyeY,
+            MouthPivotY = mouthY,
         };
     }
 
@@ -113,5 +128,38 @@ internal static class SvgFaceLoader
             throw new InvalidDataException($"Rendu SVG impossible pour {file}#{prefix}.");
         }
         return svg;
+    }
+
+    /// <summary>
+    /// Centroïde vertical du contenu lumineux, en unités viewBox (800x550).
+    /// </summary>
+    private static float CentroidY(SKPicture picture, string file, string layer)
+    {
+        const float scale = 0.25f;
+        using var bitmap = new SKBitmap((int)(800 * scale), (int)(550 * scale));
+        using var canvas = new SKCanvas(bitmap);
+        canvas.Clear(SKColors.Black);
+        canvas.Scale(scale);
+        canvas.DrawPicture(picture);
+        double sumY = 0;
+        int n = 0;
+        for (int x = 0; x < bitmap.Width; x++)
+        {
+            for (int y = 0; y < bitmap.Height; y++)
+            {
+                SKColor p = bitmap.GetPixel(x, y);
+                if ((p.Red + p.Green + p.Blue) / 3 < 40)
+                {
+                    continue;
+                }
+                sumY += y;
+                n++;
+            }
+        }
+        if (n == 0)
+        {
+            throw new InvalidDataException($"Calque {layer} vide dans {file}.");
+        }
+        return (float)(sumY / n / scale);
     }
 }

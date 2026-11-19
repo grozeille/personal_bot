@@ -22,3 +22,11 @@ Fonctionnalité: Quitter sans clavier
     Et 5 secondes s'écoulent en maintenant l'appui
     Et on relâche l'appui
     Alors la fermeture n'est pas demandée
+
+  Scénario: Un appui hors zone annule l'appui précédent
+    Soit un geste de sortie
+    Quand on appuie dans le coin haut-gauche
+    Et on appuie au milieu de l'écran
+    Et 5 secondes s'écoulent en maintenant l'appui
+    Et on relâche l'appui
+    Alors la fermeture n'est pas demandée

@@ -88,6 +88,13 @@ internal sealed class MainForm : Form
         _quitTimer = new System.Windows.Forms.Timer { Interval = 250 };
         _quitTimer.Tick += (_, _) =>
         {
+            if (!Control.MouseButtons.HasFlag(MouseButtons.Left))
+            {
+                // Doigt relevé (ou UP perdu) : on se désarme au lieu de quitter plus tard.
+                _quitTimer.Stop();
+                _quit.Reset();
+                return;
+            }
             _quit.Tick(Now());
             if (_quit.QuitRequested)
             {
