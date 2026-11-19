@@ -38,6 +38,7 @@ sur GitHub (pense à les committer). Tâche VS Code : "tests + rapport".
 
 - `Échap` : quitter (PC de dev).
 - Tap dans le coin haut-gauche : visage de confirmation, œil droit (✓) pour quitter (tablette tactile).
+- Tap sur le visage : lancer la discussion (comme `D`, sans clavier).
 - `S` / `W` : s'endormir / se réveiller (provisoire, en attendant le wake word).
 - `1`–`9`, `0` : comme le dessin de référence — neutre, mort, méchant, tournis, joie, fatigue, amour, rire, clin d'œil, dormir. `F11`/`F12` : réflexion, surprise.
 - `U` : forcer une vérification de mise à jour (PC de dev).

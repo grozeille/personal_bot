@@ -452,6 +452,13 @@ internal sealed class MainForm : Form
             _confirm.Show(_face.CurrentExpression, ConfirmPurpose.Update);
             _face.SetExpression(RobotExpression.Confirm);
         }
+        else if (!_chatRunning && !_voiceRunning)
+        {
+            // Tap sur le visage (pas de clavier sur tablette) : discuter.
+            // Ne coupe jamais une session en cours (sinon l'enfant l'arrêterait
+            // sans arrêt) : fin par silences ou touche D sur PC.
+            _ = RunConversationAsync();
+        }
     }
 
     /// <summary>
