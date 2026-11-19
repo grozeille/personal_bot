@@ -23,6 +23,8 @@ internal sealed class RobotFaceRenderer : UserControl
     private readonly ExpressionController _expression = new();
     private readonly SleepController _sleep = new();
     private SleepController.State _prevSleep = SleepController.State.Awake;
+    private IdleOptions _idleOptions = IdleOptions.Default;
+    private IdleController _idle;
 
     private int _frames;
     private TimeSpan _fpsWindowStart;
@@ -35,8 +37,23 @@ internal sealed class RobotFaceRenderer : UserControl
     /// <summary>Progression 0..1 de l'appui sur l'icône (anneau).</summary>
     public double UpdateProgress { get; set; }
 
+    /// <summary>
+    /// Seuils d'endormissement (recharge le pilote d'inactivité).
+    /// Positionné au démarrage depuis appsettings.json.
+    /// </summary>
+    public IdleOptions Idle
+    {
+        get => _idleOptions;
+        set
+        {
+            _idleOptions = value;
+            _idle = new IdleController(value.TiredAfter, value.SleepAfter);
+        }
+    }
+
     public RobotFaceRenderer()
     {
+        _idle = new IdleController(_idleOptions.TiredAfter, _idleOptions.SleepAfter);
         BackColor = Color.Black;
         _canvas = new SKControl { Dock = DockStyle.Fill };
         _canvas.PaintSurface += OnPaintSurface;
@@ -57,10 +74,39 @@ internal sealed class RobotFaceRenderer : UserControl
     public void SetEmotion(string emotion) =>
         _expression.SetEmotion(emotion, _clock.Elapsed);
 
+    /// <summary>
+    /// Activité (touche, toucher, futur mot-clé) : réarme l'endormissement,
+    /// réveille si endormi, restaure neutre si fatigué automatique.
+    /// </summary>
+    public void NotifyActivity(bool wake = true)
+    {
+        TimeSpan now = _clock.Elapsed;
+        bool wasAutoTired = _idle.NotifyActivity(now);
+        if (wake && !_sleep.IsAwake)
+        {
+            _sleep.WakeUp(now);
+        }
+        else if (wasAutoTired && _sleep.IsAwake)
+        {
+            _expression.SetExpression(RobotExpression.Neutral, now);
+        }
+    }
+
     private void OnPaintSurface(object? sender, SKPaintSurfaceEventArgs e)
     {
         TimeSpan now = _clock.Elapsed;
         _sleep.Update(now);
+        if (_sleep.IsAwake)
+        {
+            if (_idle.SleepDue(now))
+            {
+                _sleep.FallAsleep(now);
+            }
+            else if (_idle.PollTired(now))
+            {
+                _expression.SetExpression(RobotExpression.Tired, now);
+            }
+        }
         if (_sleep.Current != _prevSleep)
         {
             if (_sleep.Current == SleepController.State.Yawning)

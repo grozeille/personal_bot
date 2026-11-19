@@ -1,10 +1,14 @@
-# Rapport de tests BDD — 2026-11-18 22:28
+# Rapport de tests BDD — 2026-11-18 22:41
 
-*20 scénarios : 20 OK, 0 KO.*
+*26 scénarios : 26 OK, 0 KO.*
 
 ## Clignement des yeux — Clignement régulier sur 30 secondes — OK
 
 ![Clignement régulier sur 30 secondes](Clignement_des_yeux_Clignement_régulier_sur_30_secondes_1.png)
+
+## Cycle de sommeil — Endormissement automatique par inactivité — OK
+
+![Endormissement automatique par inactivité](Cycle_de_sommeil_Endormissement_automatique_par_inactivité_1.png)
 
 ## Cycle de sommeil — Endormissement et réveil — OK
 
@@ -61,6 +65,16 @@
 ## Expressions du visage — Toutes les expressions (wink) — OK
 
 ![Toutes les expressions (wink)](Expressions_du_visage_Toutes_les_expressions__wink__1.png)
+
+## Mise à jour depuis le NAS — Appui court sans effet — OK
+
+## Mise à jour depuis le NAS — Appui loin de l'icône sans effet — OK
+
+## Mise à jour depuis le NAS — Maj détectée puis installée par appui long — OK
+
+## Mise à jour depuis le NAS — NAS hors-ligne silencieux — OK
+
+## Mise à jour depuis le NAS — Paquet corrompu refusé — OK
 
 ## Quitter sans clavier — Appui court ne quitte pas — OK
 

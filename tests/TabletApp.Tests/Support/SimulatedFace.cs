@@ -18,7 +18,10 @@ internal sealed class SimulatedFace
     public GazeController Gaze { get; } = new(new Random(7));
     public SleepController Sleep { get; } = new();
     public ExpressionController Expression { get; } = new();
+    public IdleController Idle { get; } = new(TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(10));
     public TimeSpan Now { get; private set; }
+
+    private SleepController.State _prevSleep = SleepController.State.Awake;
 
     public List<double> BlinkStarts { get; } = new();
     public double MinBlinkOpen { get; private set; } = 1;
@@ -38,6 +41,33 @@ internal sealed class SimulatedFace
         while (Now < end)
         {
             Sleep.Update(Now);
+            if (Sleep.IsAwake)
+            {
+                if (Idle.SleepDue(Now))
+                {
+                    Sleep.FallAsleep(Now);
+                }
+                else if (Idle.PollTired(Now))
+                {
+                    Expression.SetExpression(RobotExpression.Tired, Now);
+                }
+            }
+            if (Sleep.Current != _prevSleep)
+            {
+                if (Sleep.Current == SleepController.State.Yawning)
+                {
+                    Expression.SetExpression(RobotExpression.Tired, Now);
+                }
+                else if (Sleep.Current == SleepController.State.Asleep)
+                {
+                    Expression.SetExpression(RobotExpression.Sleep, Now);
+                }
+                else if (Sleep.Current == SleepController.State.Waking)
+                {
+                    Expression.SetExpression(RobotExpression.Neutral, Now);
+                }
+                _prevSleep = Sleep.Current;
+            }
             Expression.Update(Now);
             if (Sleep.IsAwake)
             {

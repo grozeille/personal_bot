@@ -11,3 +11,11 @@ Fonctionnalité: Cycle de sommeil
     Et 3 secondes s'écoulent
     Alors les paupières ont battu avant l'ouverture complète
     Et les yeux sont ouverts
+
+  Scénario: Endormissement automatique par inactivité
+    Soit un visage éveillé
+    Quand 6 minutes s'écoulent
+    Alors l'expression affichée est "tired"
+    Quand 5 minutes s'écoulent
+    Alors le robot dort paisiblement
+    Et l'expression affichée est "sleep"

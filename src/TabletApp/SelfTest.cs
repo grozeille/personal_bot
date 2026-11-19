@@ -48,7 +48,7 @@ internal static class SelfTest
         var log = new List<string>();
         bool ok = CheckBlink(log) & CheckGaze(log) & CheckSleep(log)
             & CheckExpression(log) & CheckBlinkGating(log) & CheckFaceComplete(log)
-            & CheckSteadyYawn(log) & CheckFaceEquivalence(log);
+            & CheckSteadyYawn(log) & CheckFaceEquivalence(log) & CheckIdleSleep(log);
         RenderFrames(log);
         RenderExpressionSheet(log);
         RenderTransitionFrame(log);
@@ -328,6 +328,81 @@ internal static class SelfTest
         log.Add($"FaceEquivalence: {count} paires vérifiées, " +
             (ok ? "aucune dérive" : "dérive: " + string.Join("; ", drifted)) +
             $" -> {(ok ? "OK" : "KO")}");
+        return ok;
+    }
+
+    private static bool CheckIdleSleep(List<string> log)
+    {
+        // #16 : fatigué auto après inactivité, dodo ensuite, réveil sur activité.
+        // Seuils courts (5 s / 10 s) : même logique que le rendu temps réel.
+        var idle = new IdleController(TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10));
+        var expression = new ExpressionController();
+        var sleep = new SleepController();
+        var step = TimeSpan.FromMilliseconds(16);
+        var now = TimeSpan.Zero;
+        SleepController.State prevSleep = SleepController.State.Awake;
+        idle.NotifyActivity(now);
+
+        void frame()
+        {
+            sleep.Update(now);
+            if (sleep.IsAwake)
+            {
+                if (idle.SleepDue(now))
+                {
+                    sleep.FallAsleep(now);
+                }
+                else if (idle.PollTired(now))
+                {
+                    expression.SetExpression(RobotExpression.Tired, now);
+                }
+            }
+            if (sleep.Current != prevSleep)
+            {
+                if (sleep.Current == SleepController.State.Yawning)
+                {
+                    expression.SetExpression(RobotExpression.Tired, now);
+                }
+                else if (sleep.Current == SleepController.State.Asleep)
+                {
+                    expression.SetExpression(RobotExpression.Sleep, now);
+                }
+                else if (sleep.Current == SleepController.State.Waking)
+                {
+                    expression.SetExpression(RobotExpression.Neutral, now);
+                }
+                prevSleep = sleep.Current;
+            }
+            expression.Update(now);
+        }
+
+        void advance(TimeSpan duration)
+        {
+            TimeSpan end = now + duration;
+            while (now < end)
+            {
+                frame();
+                now += step;
+            }
+        }
+
+        advance(TimeSpan.FromSeconds(6));
+        bool tiredShown = expression.Current == RobotExpression.Tired;
+        bool restoreSignaled = idle.NotifyActivity(now);
+        expression.SetExpression(RobotExpression.Neutral, now);
+        advance(TimeSpan.FromSeconds(1));
+        bool backToNeutral = expression.Current == RobotExpression.Neutral && !expression.Transitioning;
+        advance(TimeSpan.FromSeconds(12)); // +5 s fatigué, +5 s dodo, +2,2 s bâillement
+        bool asleep = sleep.Current == SleepController.State.Asleep
+            && expression.Current == RobotExpression.Sleep;
+        idle.NotifyActivity(now);
+        sleep.WakeUp(now);
+        advance(TimeSpan.FromSeconds(3));
+        bool woke = sleep.Current == SleepController.State.Awake
+            && expression.Current == RobotExpression.Neutral;
+        bool ok = tiredShown && restoreSignaled && backToNeutral && asleep && woke;
+        log.Add($"IdleSleep: fatigué={tiredShown}, réveil-neutre={restoreSignaled && backToNeutral}, " +
+            $"dodo={asleep}, réveillé={woke} -> {(ok ? "OK" : "KO")}");
         return ok;
     }
 

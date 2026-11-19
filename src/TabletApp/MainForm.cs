@@ -60,12 +60,19 @@ internal sealed class MainForm : Form
         KeyPreview = true;
         KeyDown += (_, e) =>
         {
+            if (e.KeyCode != Keys.S)
+            {
+                // Toute touche est une activité (réarme l'endormissement,
+                // réveille). S gère son cas plus bas (pas de réveil).
+                _face.NotifyActivity();
+            }
             if (e.KeyCode == Keys.Escape)
             {
                 Close();
             }
             else if (e.KeyCode == Keys.S)
             {
+                _face.NotifyActivity(wake: false);
                 _face.FallAsleep();
             }
             else if (e.KeyCode == Keys.W)
@@ -93,6 +100,7 @@ internal sealed class MainForm : Form
 
         UpdateOptions options = UpdateOptions.Load();
         _updater = new RobotUpdater(new VelopackUpdateSource(options.Source));
+        _face.Idle = IdleOptions.Load();
 
         _titleTimer = new System.Windows.Forms.Timer { Interval = 1000 };
         _titleTimer.Tick += (_, _) =>
@@ -211,6 +219,8 @@ internal sealed class MainForm : Form
 
     private void OnQuitDown()
     {
+        // Tout toucher est une activité (réveille sur tablette sans clavier).
+        _face.NotifyActivity();
         Point location = PointToClient(MousePosition);
         _quit.Down(location, Now());
         if (_updater.UpdateAvailable)

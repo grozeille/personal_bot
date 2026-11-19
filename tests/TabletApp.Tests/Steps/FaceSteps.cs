@@ -34,6 +34,10 @@ public sealed class FaceSteps
     public void WhenSecondesSEcoulent(int seconds) =>
         _face.Advance(TimeSpan.FromSeconds(seconds));
 
+    [When("^(\\d+) minutes? s'écoulent$")]
+    public void WhenMinutesSEcoulent(int minutes) =>
+        _face.Advance(TimeSpan.FromMinutes(minutes));
+
     [When("le robot s'endort")]
     public void WhenRobotSEndort() =>
         _face.Sleep.FallAsleep(_face.Now);

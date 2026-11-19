@@ -109,14 +109,21 @@ internal static class SvgFaceLoader
     private static readonly Dictionary<string, PartLayer> Parts = new();
     private static readonly Dictionary<(FacePart, RobotExpression), ulong> PartHashes = new();
 
+    // Les captures BDD tournent en parallèle : l'initialisation paresseuse
+    // des caches doit être verrouillée (l'app live est mono-thread UI).
+    private static readonly object CacheLock = new();
+
     public static FaceLayers For(RobotExpression expression)
     {
-        if (!Cache.TryGetValue(expression, out FaceLayers? layers))
+        lock (CacheLock)
         {
-            layers = Load(expression);
-            Cache[expression] = layers;
+            if (!Cache.TryGetValue(expression, out FaceLayers? layers))
+            {
+                layers = Load(expression);
+                Cache[expression] = layers;
+            }
+            return layers;
         }
-        return layers;
     }
 
     /// <summary>
@@ -210,9 +217,12 @@ internal static class SvgFaceLoader
     private static ulong PartHash(FacePart part, RobotExpression expression)
     {
         var key = (part, expression);
-        if (PartHashes.TryGetValue(key, out ulong hash))
+        lock (CacheLock)
         {
-            return hash;
+            if (PartHashes.TryGetValue(key, out ulong cached))
+            {
+                return cached;
+            }
         }
         var face = For(expression);
         SKPicture picture = part switch
@@ -222,7 +232,7 @@ internal static class SvgFaceLoader
             _ => face.Mouth,
         };
         using var bitmap = RenderSmall(picture);
-        hash = 1469598103934665603ul;
+        ulong hash = 1469598103934665603ul;
         for (int x = 0; x < bitmap.Width; x++)
         {
             for (int y = 0; y < bitmap.Height; y++)
@@ -238,7 +248,10 @@ internal static class SvgFaceLoader
                 hash *= 1099511628211ul;
             }
         }
-        PartHashes[key] = hash;
+        lock (CacheLock)
+        {
+            PartHashes[key] = hash;
+        }
         return hash;
     }
 
