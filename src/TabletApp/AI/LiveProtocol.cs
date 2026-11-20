@@ -3,7 +3,7 @@ using System.Text.Json;
 namespace TabletApp.AI;
 
 /// <summary>Appel d'outil reçu (set_emotion : Emotion renseigné).</summary>
-internal sealed record LiveToolCall(string Id, string Name, string? Emotion);
+internal sealed record LiveToolCall(string Id, string Name, string? Emotion, string? Sound, string? Gesture);
 
 /// <summary>Mise à jour serveur décodée (plusieurs aspects peuvent coexister).</summary>
 internal sealed record LiveServerUpdate(
@@ -32,7 +32,7 @@ internal static class LiveProtocol
         "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
     internal const string Model = "models/gemini-3.8-live";
 
-    public static string BuildSetup(string systemPrompt, IReadOnlyList<string> emotions) =>
+    public static string BuildSetup(string systemPrompt, IReadOnlyList<string> emotions, IReadOnlyList<string> sounds, IReadOnlyList<string> gestures) =>
         JsonSerializer.Serialize(new
         {
             setup = new
@@ -50,7 +50,7 @@ internal static class LiveProtocol
                 {
                     new
                     {
-                        functionDeclarations = new[]
+                        functionDeclarations = new object[]
                         {
                             new
                             {
@@ -72,6 +72,46 @@ internal static class LiveProtocol
                                 },
                                 behavior = "NON_BLOCKING",
                             },
+                            new
+                            {
+                                name = "play_gesture",
+                                description = "Joue un geste de la tete (bouge + expression + son eventuel).",
+                                parameters = new
+                                {
+                                    type = "OBJECT",
+                                    properties = new
+                                    {
+                                        gesture = new
+                                        {
+                                            type = "STRING",
+                                            description = "Le geste a jouer.",
+                                            @enum = gestures,
+                                        },
+                                    },
+                                    required = new[] { "gesture" },
+                                },
+                                behavior = "NON_BLOCKING",
+                            },
+                            new
+                            {
+                                name = "play_sound",
+                                description = "Joue un petit son robot.",
+                                parameters = new
+                                {
+                                    type = "OBJECT",
+                                    properties = new
+                                    {
+                                        sound = new
+                                        {
+                                            type = "STRING",
+                                            description = "Le son voulu.",
+                                            @enum = sounds,
+                                        },
+                                    },
+                                    required = new[] { "sound" },
+                                },
+                                behavior = "NON_BLOCKING",
+                            }
                         },
                     },
                 },
@@ -145,7 +185,7 @@ internal static class LiveProtocol
                     ? idEl.GetString() ?? "" : "";
                 string name = call.TryGetProperty("name", out JsonElement nameEl)
                     ? nameEl.GetString() ?? "" : "";
-                list.Add(new LiveToolCall(id, name, ReadEmotion(call)));
+                list.Add(new LiveToolCall(id, name, ReadEmotion(call), ReadSound(call), ReadGesture(call)));
             }
             return LiveServerUpdate.Empty with { ToolCalls = list };
         }
@@ -217,6 +257,68 @@ internal static class LiveProtocol
         && text.GetString() is { Length: > 0 } value
             ? value
             : null;
+
+    private static string? ReadGesture(JsonElement call)
+    {
+        if (!call.TryGetProperty("args", out JsonElement args))
+        {
+            return null;
+        }
+        if (args.ValueKind == JsonValueKind.Object
+            && args.TryGetProperty("gesture", out JsonElement direct)
+            && direct.GetString() is { Length: > 0 } wanted)
+        {
+            return wanted;
+        }
+        if (args.ValueKind == JsonValueKind.String
+            && args.GetString() is { Length: > 0 } encoded)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(encoded);
+                if (doc.RootElement.TryGetProperty("gesture", out JsonElement nested)
+                    && nested.GetString() is { Length: > 0 } nestedWanted)
+                {
+                    return nestedWanted;
+                }
+            }
+            catch (JsonException)
+            {
+            }
+        }
+        return null;
+    }
+
+    private static string? ReadSound(JsonElement call)
+    {
+        if (!call.TryGetProperty("args", out JsonElement args))
+        {
+            return null;
+        }
+        if (args.ValueKind == JsonValueKind.Object
+            && args.TryGetProperty("sound", out JsonElement direct)
+            && direct.GetString() is { Length: > 0 } wanted)
+        {
+            return wanted;
+        }
+        if (args.ValueKind == JsonValueKind.String
+            && args.GetString() is { Length: > 0 } encoded)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(encoded);
+                if (doc.RootElement.TryGetProperty("sound", out JsonElement nested)
+                    && nested.GetString() is { Length: > 0 } nestedWanted)
+                {
+                    return nestedWanted;
+                }
+            }
+            catch (JsonException)
+            {
+            }
+        }
+        return null;
+    }
 
     private static string? ReadEmotion(JsonElement call)
     {

@@ -54,7 +54,7 @@ internal static class SelfTest
             & CheckSteadyYawn(log) & CheckFaceEquivalence(log) & CheckIdleSleep(log)
             & CheckGeminiVoice(log) & CheckSpeakingMouth(log) & CheckVoiceActivity(log)
             & CheckGeminiBrain(log) & CheckVoiceGlow(log) & CheckWakeWord(log)
-            & CheckLiveMessages(log);
+            & CheckLiveMessages(log) & CheckRobotVoice(log) & CheckRobotSounds(log);
         RenderFrames(log);
         RenderExpressionSheet(log);
         RenderTransitionFrame(log);
@@ -493,15 +493,17 @@ internal static class SelfTest
     {
         // #5 : penseur sur textes figés, sans réseau (JSON strict + replis).
         bool fullOk = GeminiBrain.ParseThinkReply(
-                "{\"reply\": \"Salut !\", \"emotion\": \"happy\"}") == ("Salut !", "happy");
+                "{\"reply\": \"Salut !\", \"emotion\": \"happy\"}") == ("Salut !", "happy", null);
         bool wrappedOk = GeminiBrain.ParseThinkReply(
-                "Voici : {\"reply\": \"Coucou.\", \"emotion\": \"love\"} !") == ("Coucou.", "love");
+                "Voici : {\"reply\": \"Coucou.\", \"emotion\": \"love\"} !") == ("Coucou.", "love", null);
         bool bareOk = GeminiBrain.ParseThinkReply("Juste du texte.")
-            == ("Juste du texte.", null);
+            == ("Juste du texte.", null, null);
         bool noEmotionOk = GeminiBrain.ParseThinkReply("{\"reply\": \"Yo.\"}")
-            == ("Yo.", null);
-        bool emptyOk = GeminiBrain.ParseThinkReply("   ") == (null, null)
-            && GeminiBrain.ParseThinkReply(null) == (null, null);
+            == ("Yo.", null, null);
+        bool emptyOk = GeminiBrain.ParseThinkReply("   ") == (null, null, null)
+            && GeminiBrain.ParseThinkReply(null) == (null, null, null);
+        bool soundOk = GeminiBrain.ParseThinkReply("{\"reply\": \"Hi !\", \"sound\": \"giggle\"}")
+            == ("Hi !", null, "giggle");
         string input = GeminiBrain.BuildInput(
             new List<(string Child, string Patate)> { ("a", "b") }, "coucou");
         bool inputOk = input.Contains("Enfant : coucou") && input.Contains("Patate : b");
@@ -516,8 +518,9 @@ internal static class SelfTest
         File.WriteAllText(customPath, "{\"Gemini\": {\"Personality\": \"Sois bref.\"}}");
         (string customText, bool customFlag) = GeminiBrain.ResolvePersonality(customPath);
         promptOk = promptOk && customFlag && customText == "Sois bref.";
-        bool ok = fullOk && wrappedOk && bareOk && noEmotionOk && emptyOk && inputOk && promptOk;
-        log.Add($"GeminiBrain: réponse={fullOk && wrappedOk && bareOk && noEmotionOk && emptyOk}, prompt={promptOk}, " +
+        bool paletteOk = RobotSounds.Names.All(n => GeminiBrain.DefaultPersonality.Contains(n));
+        bool ok = fullOk && wrappedOk && bareOk && noEmotionOk && emptyOk && inputOk && promptOk && soundOk && paletteOk;
+        log.Add($"GeminiBrain: réponse={fullOk && wrappedOk && bareOk && noEmotionOk && emptyOk}, prompt={promptOk}, son={soundOk}, palette={paletteOk}, " +
             $"entrée={inputOk} -> {(ok ? "OK" : "KO")}");
         return ok;
     }
@@ -619,14 +622,88 @@ internal static class SelfTest
         return ok;
     }
 
+    private static bool CheckRobotSounds(List<string> log)
+    {
+        // Sons robot : palette rendue, inconnu nul, WAV valide, déterministe.
+        bool namesOk = RobotSounds.Names.Count == 6;
+        bool renderOk = true;
+        foreach (string name in RobotSounds.Names)
+        {
+            byte[]? pcm = RobotSounds.Render(name);
+            renderOk = renderOk && pcm is { Length: > 0 } && pcm.Length <= 24000 * 2 * 2;
+            renderOk = renderOk && pcm!.Any(b => b != 0);
+        }
+        foreach (string sys in new[] { "reveil", "baillement", "erreur" })
+        {
+            renderOk = renderOk && RobotSounds.Render(sys) is { Length: > 0 };
+        }
+        bool unknownOk = RobotSounds.Render("farfelu") is null;
+        byte[]? giggle = RobotSounds.Render("giggle");
+        byte[] wav = RobotSounds.ToWav(giggle!, 24000);
+        bool wavOk = wav.Length == giggle!.Length + 44
+            && wav[0] == (byte)'R' && wav[1] == (byte)'I' && wav[2] == (byte)'F' && wav[3] == (byte)'F';
+        bool stableOk = RobotSounds.Render("baillement")!.SequenceEqual(RobotSounds.Render("baillement")!);
+        bool ok = namesOk && renderOk && unknownOk && wavOk && stableOk;
+        log.Add($"RobotSounds: palette={namesOk && renderOk}, inconnu={unknownOk}, " +
+            $"wav={wavOk}, stable={stableOk} -> {(ok ? "OK" : "KO")}");
+        return ok;
+    }
+
+    private static bool CheckRobotVoice(List<string> log)
+    {
+        // Filtre robot : silence préservé, effet borné, phase continue.
+        byte[] silence = new byte[480];
+        new RobotVoiceFilter().Apply(silence, 0, silence.Length, 24000);
+        bool silenceOk = silence.All(b => b == 0);
+        byte[] loud = new byte[480];
+        for (int i = 0; i < loud.Length; i += 2)
+        {
+            loud[i] = 0x00;
+            loud[i + 1] = 0x40;
+        }
+        byte[] once = (byte[])loud.Clone();
+        new RobotVoiceFilter().Apply(once, 0, once.Length, 24000);
+        byte[] twice = (byte[])loud.Clone();
+        var cont = new RobotVoiceFilter();
+        cont.Apply(twice, 0, 240, 24000);
+        cont.Apply(twice, 240, 240, 24000);
+        double rmsBefore = NAudioVoice.ComputeRms(loud, loud.Length);
+        double rmsAfter = NAudioVoice.ComputeRms(once, once.Length);
+        bool boundedOk = rmsAfter <= rmsBefore * 1.01;
+        bool changedOk = !once.SequenceEqual(loud);
+        bool continuousOk = once.SequenceEqual(twice);
+        bool fallbackOk = RobotVoiceFilter.LoadEnabled(
+            Path.Combine(Path.GetTempPath(), "patate-voix-absente.json")) == RobotVoiceFilter.DefaultEnabled;
+        string customPath = Path.Combine(Path.GetTempPath(), "patate-voix-test.json");
+        File.WriteAllText(customPath, "{\"Voice\": {\"RobotFilter\": false}}");
+        bool customOk = !RobotVoiceFilter.LoadEnabled(customPath);
+        bool ok = silenceOk && boundedOk && changedOk && continuousOk && fallbackOk && customOk;
+        log.Add($"RobotVoice: silence={silenceOk}, borne={boundedOk}, effet={changedOk}, " +
+            $"continu={continuousOk}, config={fallbackOk && customOk} -> {(ok ? "OK" : "KO")}");
+        return ok;
+    }
+
     private static bool CheckLiveMessages(List<string> log)
     {
         // Protocole Live : construction et décodage, sans réseau.
-        string setup = LiveProtocol.BuildSetup("SYS", new[] { "happy", "sad" });
+        string setup = LiveProtocol.BuildSetup("SYS", new[] { "happy", "sad" }, new[] { "giggle" }, new[] { "nod_yes" });
         bool setupOk = setup.Contains("models/gemini-3.8-live")
             && setup.Contains("generationConfig")
-            && setup.Contains("set_emotion") && setup.Contains("SYS")
+            && setup.Contains("set_emotion") && setup.Contains("SYS") && setup.Contains("play_sound")
+            && setup.Contains("play_gesture") && setup.Contains("nod_yes")
             && setup.Contains("inputAudioTranscription");
+        bool setupJsonOk;
+        try
+        {
+            using (JsonDocument.Parse(setup))
+            {
+            }
+            setupJsonOk = true;
+        }
+        catch
+        {
+            setupJsonOk = false;
+        }
         string chunk = LiveProtocol.BuildAudioChunk(new byte[] { 1, 2, 3, 4 });
         bool chunkOk;
         using (JsonDocument doc = JsonDocument.Parse(chunk))
@@ -662,19 +739,23 @@ internal static class SelfTest
         LiveServerUpdate texts = LiveProtocol.ParseUpdate(
             "{\"serverContent\":{\"inputTranscription\":{\"text\":\"salut\"},"
             + "\"outputTranscription\":{\"text\":\"coucou\"},\"turnComplete\":true}}");
+        LiveServerUpdate sfx = LiveProtocol.ParseUpdate(
+            "{\"toolCall\":{\"functionCalls\":[{\"id\":\"c9\",\"name\":\"play_sound\","
+            + "\"args\":{\"sound\":\"giggle\"}}]}}");
         LiveServerUpdate cut = LiveProtocol.ParseUpdate(
             "{\"serverContent\":{\"interrupted\":true}}");
         LiveServerUpdate away = LiveProtocol.ParseUpdate("{\"goAway\":{}}");
         LiveServerUpdate alien = LiveProtocol.ParseUpdate("{\"nimporte\":{}}");
         bool parseOk = done.SetupComplete
-            && call.ToolCalls.Count == 1 && call.ToolCalls[0] == new LiveToolCall("c1", "set_emotion", "happy")
+            && call.ToolCalls.Count == 1 && call.ToolCalls[0] == new LiveToolCall("c1", "set_emotion", "happy", null, null)
             && strArgs.ToolCalls.Count == 1 && strArgs.ToolCalls[0].Emotion == "love"
+            && sfx.ToolCalls.Count == 1 && sfx.ToolCalls[0].Sound == "giggle"
             && wave.Audio is { Length: 2 } && wave.Audio[0] == 0x41
             && texts.InputTranscript == "salut" && texts.OutputTranscript == "coucou" && texts.TurnComplete
             && cut.Interrupted && !cut.TurnComplete
             && away.GoAway
             && !alien.SetupComplete && !alien.TurnComplete && alien.Audio is null;
-        bool ok = setupOk && chunkOk && answerOk && parseOk && turnOk && fireOk;
+        bool ok = setupOk && setupJsonOk && chunkOk && answerOk && parseOk && turnOk && fireOk;
         log.Add($"LiveMessages: construction={setupOk && chunkOk && answerOk}, " +
             $"décodage={parseOk}, tours={turnOk && fireOk} -> {(ok ? "OK" : "KO")}");
         return ok;
@@ -1175,6 +1256,174 @@ internal static class SelfTest
     /// Diagnostic perf : temps moyen/p95 d'une frame par scénario et par taille,
     /// pour chiffrer le coût réel (glow, transition) avant d'optimiser.
     /// </summary>
+    /// <summary>
+    /// Démo sonore (--sons) : joue les 9 sons + comparatif voix brute /
+    /// filtrée (hors-ligne, haut-parleur par défaut). Écoute humaine requise.
+    /// </summary>
+    /// <summary>
+    /// Sonde wake word (--wake-probe) : 30 s d'écoute avec niveaux, porte et
+    /// détections affichés + indices de dépannage. Micro réel requis.
+    /// </summary>
+    public static bool WakeProbe()
+    {
+        Console.WriteLine("Micros WinMM :");
+        for (int i = 0; i < NAudio.Wave.WaveIn.DeviceCount; i++)
+        {
+            NAudio.Wave.WaveInCapabilities caps = NAudio.Wave.WaveIn.GetCapabilities(i);
+            Console.WriteLine($"  {i} : {caps.ProductName} ({caps.Channels} canaux)");
+        }
+        TabletApp.AI.WakeWordOptions options = TabletApp.AI.WakeWordOptions.Load();
+        string dir = TabletApp.AI.SherpaWakeDetector.ResolveModelDir();
+        Console.WriteLine($"Modèle : {dir}");
+        Console.WriteLine($"Seuils : porte {options.GateRms:F0} RMS, threshold {options.Threshold:F2}, score {options.Score:F1}.");
+        string kw = Path.Combine(dir, TabletApp.AI.SherpaWakeDetector.KeywordsFileName);
+        if (File.Exists(kw))
+        {
+            foreach (string line in File.ReadAllLines(kw))
+            {
+                Console.WriteLine($"  mot-clé : {line}");
+            }
+        }
+        if (!TabletApp.AI.SherpaWakeDetector.TryCreate(
+            options.Threshold, options.Score, out TabletApp.AI.SherpaWakeDetector? detector)
+            || detector is null)
+        {
+            Console.WriteLine("Détecteur : IMPOSSIBLE (modèle absent ?) -> KO");
+            return false;
+        }
+        using (detector)
+        {
+            using var listener = new TabletApp.AI.WakeWordListener(detector, gateRms: options.GateRms);
+            object sync = new();
+            int buffers = 0;
+            int open = 0;
+            double maxRms = 0;
+            int hits = 0;
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            var window = System.Diagnostics.Stopwatch.StartNew();
+            double wmax = 0;
+            int wopen = 0;
+            int wbufs = 0;
+            listener.Detected += () =>
+            {
+                lock (sync)
+                {
+                    hits++;
+                }
+                Console.WriteLine($"  >>> DÉTECTÉ : {detector.LastKeyword} à {watch.Elapsed.TotalSeconds:F1} s");
+            };
+            listener.Tick += tick =>
+            {
+                lock (sync)
+                {
+                    buffers++;
+                    if (tick.GateOpen)
+                    {
+                        open++;
+                    }
+                    if (tick.Rms > maxRms)
+                    {
+                        maxRms = tick.Rms;
+                    }
+                    wbufs++;
+                    if (tick.Rms > wmax)
+                    {
+                        wmax = tick.Rms;
+                    }
+                    if (tick.GateOpen)
+                    {
+                        wopen++;
+                    }
+                    if (window.Elapsed.TotalSeconds >= 1)
+                    {
+                        Console.WriteLine($"  t={watch.Elapsed.TotalSeconds:F0}s RMS max={wmax * 32768:F0} " +
+                            $"porte={wopen}/{wbufs} alim={(tick.Feeding ? "oui" : "non")}");
+                        window.Restart();
+                        wmax = 0;
+                        wopen = 0;
+                        wbufs = 0;
+                    }
+                }
+            };
+            Console.WriteLine("Dites « Hey Patate » (30 s)...");
+            listener.Start();
+            Thread.Sleep(TimeSpan.FromSeconds(30));
+            listener.Stop();
+            Console.WriteLine($"Tampons : {buffers}, porte ouverte : {open}, " +
+                $"max RMS : {maxRms * 32768:F0}, détections : {hits}.");
+            if (buffers == 0)
+            {
+                Console.WriteLine("INDICE : aucun tampon reçu, micro inaccessible (confidentialité Windows ?).");
+            }
+            else if (maxRms * 32768 < 20)
+            {
+                Console.WriteLine("INDICE : micro quasi muet, vérifier le micro par défaut et son volume.");
+            }
+            else if (open == 0)
+            {
+                Console.WriteLine("INDICE : la porte ne s'ouvre pas, parler plus fort/près ou baisser WakeWord:GateRms.");
+            }
+            else if (hits == 0)
+            {
+                Console.WriteLine("INDICE : parole captée mais pas reconnue, baisser WakeWord:Threshold (ex. 0.15).");
+            }
+            else
+            {
+                Console.WriteLine("WAKE-PROBE: OK");
+            }
+        }
+        return true;
+    }
+
+    public static bool Sounds()
+    {
+        string[] demo = { "giggle", "curious", "sad", "wow", "oops", "snore", "reveil", "baillement", "erreur" };
+        foreach (string name in demo)
+        {
+            byte[]? pcm = RobotSounds.Render(name);
+            if (pcm is null)
+            {
+                Console.WriteLine($"Son {name} : INTROUVABLE -> KO");
+                return false;
+            }
+            Console.WriteLine($"Son {name} ({pcm.Length / 48000.0:F1} s)...");
+            NAudioVoice.PlayAsync(RobotSounds.ToWav(pcm), CancellationToken.None)
+                .GetAwaiter().GetResult();
+        }
+        byte[] phrase = DemoPhrase();
+        Console.WriteLine("Voix brute...");
+        NAudioVoice.PlayAsync(RobotSounds.ToWav(phrase), CancellationToken.None, raw: true)
+            .GetAwaiter().GetResult();
+        Console.WriteLine("Voix filtrée (Voice:RobotFilter)...");
+        NAudioVoice.PlayAsync(RobotSounds.ToWav(phrase), CancellationToken.None)
+            .GetAwaiter().GetResult();
+        Console.WriteLine("SONS: OK");
+        return true;
+    }
+
+    // Fausse voyelle "aaaah" (3 harmoniques + vibrato) pour juger le filtre.
+    private static byte[] DemoPhrase()
+    {
+        const int rate = 24000;
+        const double seconds = 1.4;
+        int n = (int)(seconds * rate);
+        byte[] pcm = new byte[n * 2];
+        double phase = 0;
+        for (int i = 0; i < n; i++)
+        {
+            double t = (double)i / rate;
+            double f = 180 - 70 * t / seconds;
+            f *= 1.0 + 0.02 * Math.Sin(2.0 * Math.PI * 5 * t);
+            phase += 2.0 * Math.PI * f / rate;
+            double v = Math.Sin(phase) + 0.4 * Math.Sin(2 * phase) + 0.15 * Math.Sin(3 * phase);
+            double env = Math.Sin(Math.PI * Math.Min(1.0, t / seconds));
+            short s = (short)(7000 * env * v / 1.55);
+            pcm[i * 2] = (byte)(s & 0xFF);
+            pcm[i * 2 + 1] = (byte)((s >> 8) & 0xFF);
+        }
+        return pcm;
+    }
+
     public static bool Perf()
     {
         AttachConsole(-1);

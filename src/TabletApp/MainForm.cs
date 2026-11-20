@@ -408,7 +408,7 @@ internal sealed class MainForm : Form
         using var mic = new LiveMic();
         using var player = new LivePlayer();
         var session = new LiveSession(
-            key, GeminiBrain.LiveSystemPrompt, GeminiBrain.EmotionNames, RobotSounds.Names,
+            key, GeminiBrain.LiveSystemPrompt, GeminiBrain.EmotionNames, RobotSounds.Names, GeminiBrain.GestureNames,
             socket, mic, player,
             new LiveCallbacks(
                 OnEmotion: emotion => Ui(() =>
@@ -419,6 +419,7 @@ internal sealed class MainForm : Form
                     }
                     VoiceLog.Info($"Emotion : {emotion}.");
                 }),
+                OnGesture: gesture => { _ = RunHeadTestAsync(gesture); },
                 OnSound: sound =>
                 {
                     byte[]? pcm = RobotSounds.Render(sound);

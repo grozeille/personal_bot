@@ -15,6 +15,7 @@ public sealed class LiveSteps
     private readonly List<string> _emotions = new();
     private readonly List<string> _heard = new();
     private readonly List<string> _said = new();
+    private readonly List<string> _sounds = new();
     private readonly List<bool> _speaking = new();
     private bool _cancelAfterInterrupt;
     private bool _finished;
@@ -44,6 +45,14 @@ public sealed class LiveSteps
         _cancelAfterInterrupt = true;
     }
 
+    [Given("un serveur live qui joue un son")]
+    public void GivenJoueUnSon()
+    {
+        _socket.Script(
+            """{"setupComplete":{}}""",
+            """{"toolCall":{"functionCalls":[{"id":"c9","name":"play_sound","args":{"sound":"giggle"}}]}}""");
+    }
+
     [Given("un serveur live injoignable")]
     public void GivenInjoignable() => _socket.FailConnect = true;
 
@@ -60,14 +69,16 @@ public sealed class LiveSteps
     {
         using var cts = new CancellationTokenSource();
         var session = new LiveSession(
-            "cle-fausse", "SYS", new[] { "happy" },
+            "cle-fausse", "SYS", new[] { "happy" }, new[] { "giggle" }, new[] { "nod_yes" },
             _socket, _mic, _player,
             new LiveCallbacks(
                 OnEmotion: emotion => _emotions.Add(emotion),
+                OnSound: sound => _sounds.Add(sound),
                 OnHeardTranscript: text => _heard.Add(text),
                 OnRobotTranscript: text => _said.Add(text),
                 OnSpeaking: speaking => _speaking.Add(speaking),
                 OnGlow: _ => { },
+                OnGesture: _ => { },
                 OnUserSpeech: () => { },
                 OnLog: _ => { }),
             idleTimeout: TimeSpan.FromMilliseconds(300),
@@ -98,9 +109,9 @@ public sealed class LiveSteps
     public async Task WhenDemarre()
     {
         var session = new LiveSession(
-            "cle-fausse", "SYS", new[] { "happy" },
+            "cle-fausse", "SYS", new[] { "happy" }, new[] { "giggle" }, new[] { "nod_yes" },
             _socket, _mic, _player,
-            new LiveCallbacks(_ => { }, _ => { }, _ => { }, _ => { }, _ => { }, () => { }, _ => { }));
+            new LiveCallbacks(_ => { }, _ => { }, _ => { }, _ => { }, _ => { }, _ => { }, _ => { }, () => { }, _ => { }));
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => session.RunAsync(CancellationToken.None));
         _finished = true;
@@ -146,6 +157,13 @@ public sealed class LiveSteps
         Assert.False(_speaking[^1]);
     }
 
+    [Then("le son giggle est joué et le tool est acquitté")]
+    public void ThenSon()
+    {
+        Assert.Equal(new[] { "giggle" }, _sounds.ToArray());
+        Assert.Contains(_socket.Sent, json => json.Contains("\"c9\""));
+    }
+
     [Then("rien n'est envoyé")]
     public void ThenRien()
     {
@@ -158,14 +176,16 @@ public sealed class LiveSteps
     {
         using var cts = new CancellationTokenSource();
         var session = new LiveSession(
-            "cle-fausse", "SYS", new[] { "happy" },
+            "cle-fausse", "SYS", new[] { "happy" }, new[] { "giggle" }, new[] { "nod_yes" },
             _socket, _mic, _player,
             new LiveCallbacks(
                 OnEmotion: emotion => _emotions.Add(emotion),
+                OnSound: sound => _sounds.Add(sound),
                 OnHeardTranscript: text => _heard.Add(text),
                 OnRobotTranscript: text => _said.Add(text),
                 OnSpeaking: speaking => _speaking.Add(speaking),
                 OnGlow: _ => { },
+                OnGesture: _ => { },
                 OnUserSpeech: () => { },
                 OnLog: _ => { }),
             idleTimeout: TimeSpan.FromSeconds(30),

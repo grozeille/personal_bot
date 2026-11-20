@@ -35,6 +35,8 @@ internal interface ILivePlayer : IDisposable
 /// <summary>Événements de session vers l'app (sur threads de fond !).</summary>
 internal sealed record LiveCallbacks(
     Action<string> OnEmotion,
+    Action<string> OnSound,
+    Action<string> OnGesture,
     Action<string> OnHeardTranscript,
     Action<string> OnRobotTranscript,
     Action<bool> OnSpeaking,
@@ -54,6 +56,8 @@ internal sealed class LiveSession
     private readonly string _apiKey;
     private readonly string _systemPrompt;
     private readonly IReadOnlyList<string> _emotions;
+    private readonly IReadOnlyList<string> _sounds;
+    private readonly IReadOnlyList<string> _gestures;
     private readonly ILiveSocket _socket;
     private readonly ILiveMic _mic;
     private readonly ILivePlayer _player;
@@ -72,13 +76,15 @@ internal sealed class LiveSession
     private CancellationTokenSource? _stop;
 
     public LiveSession(
-        string apiKey, string systemPrompt, IReadOnlyList<string> emotions,
+        string apiKey, string systemPrompt, IReadOnlyList<string> emotions, IReadOnlyList<string> sounds, IReadOnlyList<string> gestures,
         ILiveSocket socket, ILiveMic mic, ILivePlayer player,
         LiveCallbacks events, TimeSpan? idleTimeout = null, TimeSpan? turnTimeout = null)
     {
         _apiKey = apiKey;
         _systemPrompt = systemPrompt;
         _emotions = emotions;
+        _sounds = sounds;
+        _gestures = gestures;
         _socket = socket;
         _mic = mic;
         _player = player;
@@ -96,7 +102,7 @@ internal sealed class LiveSession
         {
             await _socket.ConnectAsync(
                 LiveProtocol.Endpoint, _apiKey, stop.Token).ConfigureAwait(false);
-            string setupJson = LiveProtocol.BuildSetup(_systemPrompt, _emotions);
+            string setupJson = LiveProtocol.BuildSetup(_systemPrompt, _emotions, _sounds, _gestures);
             await _socket.SendAsync(setupJson, stop.Token).ConfigureAwait(false);
             await WaitForSetupAsync(setupJson, stop.Token, ct).ConfigureAwait(false);
             _events.OnLog($"Live : session prête en {setupWatch.Elapsed.TotalSeconds:F1} s.");
@@ -239,6 +245,14 @@ internal sealed class LiveSession
                 if (call.Name == "set_emotion" && call.Emotion is { } feeling)
                 {
                     _events.OnEmotion(feeling);
+                }
+                if (call.Name == "play_sound" && call.Sound is { } sfx)
+                {
+                    _events.OnSound(sfx);
+                }
+                if (call.Name == "play_gesture" && call.Gesture is { } g)
+                {
+                    _events.OnGesture(g);
                 }
                 await _socket.SendAsync(
                     LiveProtocol.BuildToolResponse(new[] { (call.Id, call.Name) }),
