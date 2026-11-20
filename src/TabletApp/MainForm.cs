@@ -54,10 +54,21 @@ internal sealed class MainForm : Form
     {
         Text = "Robot Companion";
         BackColor = Color.Black;
-        FormBorderStyle = FormBorderStyle.None;
-        StartPosition = FormStartPosition.Manual;
-        WindowState = FormWindowState.Maximized;
-        TopMost = true;
+        if (Program.FaceSize is { } faceSize)
+        {
+            // Mode dev : fenetre aux dimensions de la tablette (logs + simu visibles a cote).
+            FormBorderStyle = FormBorderStyle.Sizable;
+            StartPosition = FormStartPosition.CenterScreen;
+            ClientSize = faceSize;
+            TopMost = false;
+        }
+        else
+        {
+            FormBorderStyle = FormBorderStyle.None;
+            StartPosition = FormStartPosition.Manual;
+            WindowState = FormWindowState.Maximized;
+            TopMost = true;
+        }
 
         _face = new RobotFaceRenderer { Dock = DockStyle.Fill };
         Controls.Add(_face);
@@ -178,10 +189,13 @@ internal sealed class MainForm : Form
     protected override void OnShown(EventArgs e)
     {
         base.OnShown(e);
-        // Vrai plein écran : couvre aussi la barre des tâches (Maximized seul la respecte).
-        WindowState = FormWindowState.Normal;
-        Bounds = Screen.FromControl(this).Bounds;
-        Cursor.Hide();
+        if (Program.FaceSize is null)
+        {
+            // Vrai plein écran : couvre aussi la barre des tâches (Maximized seul la respecte).
+            WindowState = FormWindowState.Normal;
+            Bounds = Screen.FromControl(this).Bounds;
+            Cursor.Hide();
+        }
         SetThreadExecutionState(ES_CONTINUOUS | ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED);
     }
 

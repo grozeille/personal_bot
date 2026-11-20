@@ -8,6 +8,9 @@ internal static class Program
     [DllImport("kernel32.dll")]
     private static extern bool AttachConsole(int processId);
 
+    /// <summary>Flag --face-size LxH (ex : 1280x800) : fenetre aux dimensions tablette pour le dev.</summary>
+    internal static System.Drawing.Size? FaceSize { get; private set; }
+
     /// <summary>Flag --head-test [geste] : joue un geste (tete + visage + son) au demarrage.</summary>
     internal static bool AutoHeadTest { get; private set; }
 
@@ -68,6 +71,16 @@ internal static class Program
         if (AutoHeadTest && headIdx + 1 < args.Length && !args[headIdx + 1].StartsWith("--"))
         {
             AutoHeadGesture = args[headIdx + 1];
+        }
+        int sizeIdx = Array.IndexOf(args, "--face-size");
+        if (sizeIdx >= 0 && sizeIdx + 1 < args.Length)
+        {
+            string[] wh = args[sizeIdx + 1].Split('x');
+            if (wh.Length == 2 && int.TryParse(wh[0], out int w) && int.TryParse(wh[1], out int h)
+                && w >= 320 && h >= 240 && w <= 4096 && h <= 4096)
+            {
+                FaceSize = new System.Drawing.Size(w, h);
+            }
         }
         AutoVoiceTest = args.Contains("--voice-test");
         AutoDiscuss = args.Contains("--discuter");
