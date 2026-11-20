@@ -17,14 +17,46 @@ var _current := {"yaw": 0.0, "pitch": 0.0, "roll": 0.0}
 var _track: Array = []
 var _track_t := 0.0
 var _track_active := false
+var _cam_yaw := deg_to_rad(45.0)
+var _cam_pitch := deg_to_rad(12.0)
+var _cam_dist := 0.8
+const CAM_TARGET := Vector3(0, 0.42, 0)
 
 @onready var _pan_pivot: Node3D = $PanPivot
 @onready var _tilt_pivot: Node3D = $PanPivot/TiltPivot
 @onready var _roll_pivot: Node3D = $PanPivot/TiltPivot/RollPivot
+@onready var _camera: Camera3D = $Camera3D
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventMouseMotion:
+		var motion: InputEventMouseMotion = event
+		if (motion.button_mask & MOUSE_BUTTON_MASK_LEFT) != 0:
+			_cam_yaw -= motion.relative.x * 0.005
+			_cam_pitch = clampf(_cam_pitch + motion.relative.y * 0.005, deg_to_rad(-60.0), deg_to_rad(85.0))
+			_update_camera()
+	elif event is InputEventMouseButton:
+		var mb: InputEventMouseButton = event
+		if mb.pressed and mb.button_index == MOUSE_BUTTON_WHEEL_UP:
+			_cam_dist = clampf(_cam_dist * 0.9, 0.25, 3.0)
+			_update_camera()
+		elif mb.pressed and mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			_cam_dist = clampf(_cam_dist * 1.1, 0.25, 3.0)
+			_update_camera()
+
+
+func _update_camera() -> void:
+	if not is_node_ready():
+		return
+	var cp := cos(_cam_pitch)
+	var pos := CAM_TARGET + Vector3(_cam_dist * cp * sin(_cam_yaw), _cam_dist * sin(_cam_pitch), _cam_dist * cp * cos(_cam_yaw))
+	_camera.position = pos
+	_camera.look_at(CAM_TARGET)
 
 
 func _ready() -> void:
 	_apply_pose()
+	_update_camera()
 	var err := _server.listen(PORT)
 	if err != OK:
 		push_error("TCP listen %d: %s" % [PORT, err])
