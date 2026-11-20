@@ -19,7 +19,8 @@ Statut : à inventorier (cocher ce qui est déjà en stock).
 | Pièce | Spec | Qté | Prix indicatif | Note |
 |---|---|---|---|---|
 | Base bois lestée | 20×20 cm, ép. ≥ 18 mm | 1 | récup/chute | Percer + visser le socle Pan ; lester si besoin |
-| Équerres alu | Profilé ou équerres 30×30 mm | 2–3 | ~10 $ | Articulations Tilt/Roll (ou pièces imprimées 3D — voir CAO) |
+| Kit pan-tilt 2 axes alu (1× U court + 1× multifonction + roulement + visserie) | Pour MG996R/DS3218, ex. short pan-tilt kit | 1 | ~15 $ | Base PAN→TILT : palonnier vissé sous plateau, roulement sous charge (cf. hardware/plan-2d-v2.png) |
+| Équerre multifonction alu (berceau standard 40×20) | Type servo bracket 58×37×25,5 | 1–2 | ~8 $/pc | Berceau ROLL + fixation tablette : servo bridé par oreilles, palonnier vissé |
 | Palonniers alu 25T | Bras métal 25 dents (MG996R/DS3218) | 3 | ~10 $/lot | Mise au neutre 90° avant vissage (cf. issue #10) |
 | Pince tablette | Pince universelle 8" (Dell Venue 8 Pro, 216×130 mm) | 1 | ~15 $ | Fixation sur Roll, coins dégagés |
 | Visserie | M3/M4 + écrous frein, entretoises laiton M3 | 1 lot | ~12 $ | |
