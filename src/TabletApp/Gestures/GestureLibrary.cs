@@ -8,7 +8,14 @@ namespace TabletApp.Gestures;
 /// </summary>
 internal sealed class GestureLibrary
 {
-    public record Gesture(string Name, string Expression, string MovesJson);
+    public record Gesture(string Name, string Expression, string MovesJson, string? Sound, int SoundAtMs);
+
+    public static Gesture LoadGesture(JsonElement g, string name) => new(
+        name,
+        g.GetProperty("expression").GetString() ?? "neutral",
+        g.GetProperty("moves").GetRawText(),
+        g.TryGetProperty("sound", out JsonElement s) ? s.GetProperty("name").GetString() : null,
+        g.TryGetProperty("sound", out JsonElement s2) && s2.TryGetProperty("at_ms", out JsonElement ms) ? ms.GetInt32() : 0);
 
     private readonly Dictionary<string, Gesture> _gestures = new(StringComparer.OrdinalIgnoreCase);
 
@@ -20,10 +27,7 @@ internal sealed class GestureLibrary
         var lib = new GestureLibrary();
         foreach (var g in doc.RootElement.GetProperty("gestures").EnumerateObject())
         {
-            lib._gestures[g.Name] = new Gesture(
-                g.Name,
-                g.Value.GetProperty("expression").GetString() ?? "neutral",
-                g.Value.GetProperty("moves").GetRawText());
+            lib._gestures[g.Name] = LoadGesture(g.Value, g.Name);
         }
         return lib;
     }

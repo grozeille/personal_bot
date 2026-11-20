@@ -282,11 +282,12 @@ internal sealed class MainForm : Form
     /// Test tete (touche H, flag --head-test) : geste + visage couples.
     /// Tilt_curious par defaut : visage Thinking + piste TCP vers simu/Pi.
     /// </summary>
-    private async Task RunHeadTestAsync(string gesture = "tilt_curious")
+    private async Task RunHeadTestAsync(string? gesture = null)
     {
+        gesture ??= Program.AutoHeadGesture;
         try
         {
-            string result = await HeadTest.PlayAsync(_face, gesture).ConfigureAwait(true);
+            string result = await HeadTest.PlayAsync(_face, gesture, PlaySoundAsync).ConfigureAwait(true);
             VoiceLog.Info(result);
         }
         catch (Exception ex)

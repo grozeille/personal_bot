@@ -7,7 +7,8 @@ namespace TabletApp.Gestures;
 /// </summary>
 internal static class HeadTest
 {
-    public static async Task<string> PlayAsync(RobotFaceRenderer face, string gestureName)
+    public static async Task<string> PlayAsync(
+        RobotFaceRenderer face, string gestureName, Func<string, Task>? playSound = null)
     {
         string path = GestureLibrary.ResolvePath();
         GestureLibrary lib = GestureLibrary.Load(path);
@@ -18,6 +19,14 @@ internal static class HeadTest
         if (ExpressionController.TryParse(gesture.Expression, out RobotExpression expression))
         {
             face.SetExpression(expression);
+        }
+        if (playSound is not null && gesture.Sound is not null)
+        {
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(Math.Max(0, gesture.SoundAtMs)).ConfigureAwait(false);
+                await playSound(gesture.Sound).ConfigureAwait(false);
+            });
         }
         try
         {

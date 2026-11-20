@@ -34,7 +34,8 @@
     },
     "greet_wake": {
       "expression": "happy",
-      "intent": "Salut, reveil",
+      "intent": "Salut, reveil (son reveil)",
+      "sound": { "name": "reveil", "at_ms": 0 },
       "moves": [
         { "yaw": 0, "pitch": 12, "roll": 0, "t": 0 },
         { "yaw": -12, "pitch": 8, "roll": 0, "t": 400 },
@@ -66,6 +67,7 @@
     "sleepy_bow": {
       "expression": "tired",
       "intent": "Fatigue, synchroniser avec le son baillement",
+      "sound": { "name": "baillement", "at_ms": 1000 },
       "moves": [
         { "yaw": 0, "pitch": 0, "roll": 0, "t": 0 },
         { "yaw": 0, "pitch": 35, "roll": 0, "t": 1200 },
