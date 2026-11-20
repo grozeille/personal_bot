@@ -14,7 +14,7 @@ internal static class NAudioVoice
 {
     // Parole vs bruit de fond (RMS sur échantillons 16 bits) + 1,2 s de
     // silence après la parole pour couper l'écoute sans attendre le max.
-    private const double SpeechRms = 500.0;
+    internal const double SpeechRmsThreshold = 500.0;
     private static readonly TimeSpan SilenceHang = TimeSpan.FromMilliseconds(1200);
 
     /// <summary>
@@ -44,7 +44,7 @@ internal static class NAudioVoice
                 {
                     peak = rms;
                 }
-                if (rms >= SpeechRms)
+                if (rms >= SpeechRmsThreshold)
                 {
                     speech = true;
                     lastSpeechAt = watch.Elapsed;

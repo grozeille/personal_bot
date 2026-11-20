@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using SkiaSharp;
 using TabletApp.AI;
 using TabletApp.UI;
@@ -52,7 +53,8 @@ internal static class SelfTest
             & CheckExpression(log) & CheckBlinkGating(log) & CheckFaceComplete(log)
             & CheckSteadyYawn(log) & CheckFaceEquivalence(log) & CheckIdleSleep(log)
             & CheckGeminiVoice(log) & CheckSpeakingMouth(log) & CheckVoiceActivity(log)
-            & CheckGeminiBrain(log) & CheckVoiceGlow(log);
+            & CheckGeminiBrain(log) & CheckVoiceGlow(log) & CheckWakeWord(log)
+            & CheckLiveMessages(log);
         RenderFrames(log);
         RenderExpressionSheet(log);
         RenderTransitionFrame(log);
@@ -536,6 +538,135 @@ internal static class SelfTest
         using var image = SKImage.FromBitmap(bitmap);
         using var data = image.Encode(SKEncodedImageFormat.Png, 100);
         return data.ToArray();
+    }
+
+    private sealed class FakeSpotter : TabletApp.AI.IWakeDetector
+    {
+        private readonly Queue<bool> _fires;
+
+        public FakeSpotter(params bool[] fires) => _fires = new Queue<bool>(fires);
+
+        public int FeedCalls { get; private set; }
+
+        public int Resets { get; private set; }
+
+        public void Feed(float[] samples) => FeedCalls++;
+
+        public bool TakeDetected() => _fires.Count > 0 && _fires.Dequeue();
+
+        public void Reset() => Resets++;
+
+        public void Dispose()
+        {
+        }
+    }
+
+    private static bool CheckWakeWord(List<string> log)
+    {
+        // Détecteur fake : déclenche une fois, anti-rebond 3 s, défauts seuils.
+        using var listener = new TabletApp.AI.WakeWordListener(new FakeSpotter(true, true, false));
+        int fires = 0;
+        listener.Detected += () => fires++;
+        listener.OnAudio(new float[160]);
+        listener.OnAudio(new float[160]);
+        listener.OnAudio(new float[160]);
+        WakeWordOptions options = WakeWordOptions.Load(Path.Combine(
+            Path.GetTempPath(), "tabletapp-jamais-un-fichier.json"));
+        bool defaultsOk = options.Threshold == WakeWordOptions.DefaultThreshold
+            && options.Score == WakeWordOptions.DefaultScore;
+        // Moteur natif réel si le modèle est présent (sinon : non testé, pas un échec).
+        bool nativeOk = true;
+        bool nativeTested = TabletApp.AI.SherpaWakeDetector.TryCreate(
+            0.25f, 1.0f,
+            out TabletApp.AI.SherpaWakeDetector? sherpa);
+        if (nativeTested && sherpa is not null)
+        {
+            using (sherpa)
+            {
+                sherpa.Feed(new float[1600]);
+                nativeOk = !sherpa.TakeDetected();
+            }
+        }
+        var gated = new FakeSpotter();
+        using var listener2 = new TabletApp.AI.WakeWordListener(
+            gated, quietHangover: TimeSpan.FromMilliseconds(60));
+        float[] silence = new float[160];
+        float[] loud = Enumerable.Repeat(0.5f, 160).ToArray();
+        listener2.OnAudio(silence);
+        listener2.OnAudio(silence);
+        listener2.OnAudio(loud);
+        bool gateOk = gated.FeedCalls == 3;
+        Thread.Sleep(100);
+        listener2.OnAudio(silence);
+        Thread.Sleep(70);
+        listener2.OnAudio(silence);
+        bool resetOk = gated.Resets == 1 && gated.FeedCalls == 3;
+        bool ok = fires == 1 && defaultsOk && nativeOk && gateOk && resetOk;
+        log.Add($"WakeWord: déclenchements={fires}/1 attendu, défauts={defaultsOk}, " +
+            $"natif={(nativeTested ? nativeOk.ToString() : "absent")}, " +
+            $"vad={gateOk && resetOk} -> {(ok ? "OK" : "KO")}");
+        return ok;
+    }
+
+    private static bool CheckLiveMessages(List<string> log)
+    {
+        // Protocole Live : construction et décodage, sans réseau.
+        string setup = LiveProtocol.BuildSetup("SYS", new[] { "happy", "sad" });
+        bool setupOk = setup.Contains("models/gemini-3.8-live")
+            && setup.Contains("generationConfig")
+            && setup.Contains("set_emotion") && setup.Contains("SYS")
+            && setup.Contains("inputAudioTranscription");
+        string chunk = LiveProtocol.BuildAudioChunk(new byte[] { 1, 2, 3, 4 });
+        bool chunkOk;
+        using (JsonDocument doc = JsonDocument.Parse(chunk))
+        {
+            JsonElement audio = doc.RootElement.GetProperty("realtimeInput").GetProperty("audio");
+            chunkOk = audio.GetProperty("mimeType").GetString() == "audio/pcm;rate=16000"
+                && Convert.FromBase64String(audio.GetProperty("data").GetString()!)
+                    .SequenceEqual(new byte[] { 1, 2, 3, 4 });
+        }
+        string answer = LiveProtocol.BuildToolResponse(new[] { ("c1", "set_emotion") });
+        bool answerOk = answer.Contains("\"c1\"") && answer.Contains("set_emotion");
+        string turn = LiveProtocol.BuildTurnComplete();
+        string greeting = LiveProtocol.BuildClientTurn("Salut");
+        bool turnOk = turn.Contains("\"turnComplete\":true") && !turn.Contains("turns")
+            && greeting.Contains("\"turnComplete\":true") && greeting.Contains("Salut");
+        DateTime now = new(2026, 1, 1, 12, 0, 10, DateTimeKind.Utc);
+        TimeSpan silence = TimeSpan.FromMilliseconds(1200);
+        bool fireOk = LiveSession.ShouldSendTurnComplete(false, true, now.AddSeconds(-2), DateTime.MinValue, now, silence)
+            && !LiveSession.ShouldSendTurnComplete(false, false, now.AddSeconds(-2), DateTime.MinValue, now, silence)
+            && !LiveSession.ShouldSendTurnComplete(true, true, now.AddSeconds(-2), DateTime.MinValue, now, silence)
+            && !LiveSession.ShouldSendTurnComplete(false, true, now.AddSeconds(-2), now.AddSeconds(-1), now, silence)
+            && !LiveSession.ShouldSendTurnComplete(false, true, now.AddMilliseconds(-500), DateTime.MinValue, now, silence);
+        LiveServerUpdate done = LiveProtocol.ParseUpdate("{\"setupComplete\":{}}");
+        LiveServerUpdate call = LiveProtocol.ParseUpdate(
+            "{\"toolCall\":{\"functionCalls\":[{\"id\":\"c1\",\"name\":\"set_emotion\","
+            + "\"args\":{\"emotion\":\"happy\"}}]}}");
+        LiveServerUpdate strArgs = LiveProtocol.ParseUpdate(
+            "{\"toolCall\":{\"functionCalls\":[{\"id\":\"c2\",\"name\":\"set_emotion\","
+            + "\"args\":\"{\\\"emotion\\\":\\\"love\\\"}\"}]}}");
+        LiveServerUpdate wave = LiveProtocol.ParseUpdate(
+            "{\"serverContent\":{\"modelTurn\":{\"parts\":[{\"inlineData\":{"
+            + "\"mimeType\":\"audio/pcm;rate=24000\",\"data\":\"QUI=\"}}]}}}");
+        LiveServerUpdate texts = LiveProtocol.ParseUpdate(
+            "{\"serverContent\":{\"inputTranscription\":{\"text\":\"salut\"},"
+            + "\"outputTranscription\":{\"text\":\"coucou\"},\"turnComplete\":true}}");
+        LiveServerUpdate cut = LiveProtocol.ParseUpdate(
+            "{\"serverContent\":{\"interrupted\":true}}");
+        LiveServerUpdate away = LiveProtocol.ParseUpdate("{\"goAway\":{}}");
+        LiveServerUpdate alien = LiveProtocol.ParseUpdate("{\"nimporte\":{}}");
+        bool parseOk = done.SetupComplete
+            && call.ToolCalls.Count == 1 && call.ToolCalls[0] == new LiveToolCall("c1", "set_emotion", "happy")
+            && strArgs.ToolCalls.Count == 1 && strArgs.ToolCalls[0].Emotion == "love"
+            && wave.Audio is { Length: 2 } && wave.Audio[0] == 0x41
+            && texts.InputTranscript == "salut" && texts.OutputTranscript == "coucou" && texts.TurnComplete
+            && cut.Interrupted && !cut.TurnComplete
+            && away.GoAway
+            && !alien.SetupComplete && !alien.TurnComplete && alien.Audio is null;
+        bool ok = setupOk && chunkOk && answerOk && parseOk && turnOk && fireOk;
+        log.Add($"LiveMessages: construction={setupOk && chunkOk && answerOk}, " +
+            $"décodage={parseOk}, tours={turnOk && fireOk} -> {(ok ? "OK" : "KO")}");
+        return ok;
     }
 
     private static SKBitmap RenderBitmap(

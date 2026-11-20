@@ -44,7 +44,8 @@ sur GitHub (pense à les committer). Tâche VS Code : "tests + rapport".
 - `U` : forcer une vérification de mise à jour (PC de dev).
 - `I` : aperçu de l'icône de mise à jour, avec/sans (PC de dev, sans NAS).
 - `T` : test voix #5 — dit « Bonjour, je m'appelle Patate ! » (TTS Gemini, bouche grande ouverte pendant la parole), écoute 10 s (STT Gemini), visage cœur 2 s si « bonjour » entendu (mort 2 s si échec : clé, micro, réseau). Idem une fois au démarrage avec `--voice-test`.
-- `D` : discussion libre (« Je t'écoute... », boucle écoute → pense → répond avec émotion en JSON {reply, emotion}, « Bye ! » après 2 silences ou `D`). Visage concentré (regard fixe, sans clignement) + halo : fixe en écoute, pulsé en réflexion. Idem au démarrage avec `--discuter`. Journal : console + `%TEMP%\tabletapp-voice.log`.
+- `D` : discussion libre temps réel (Gemini Live : micro streamé, voix jouée, tool natif `set_emotion`, interruptions). Repli unaire si le Live échoue. Fin : 60 s de silence ou `D`. Visage concentré + halo ; journal : console + `%TEMP%\tabletapp-voice.log`. Idem au démarrage avec `--discuter`.
+- Écoute always-on « Hey Patate » (sherpa-onnx local, 0 $) : démarre la discussion comme `D` (ignoré en session/dialogue/maj). Modèle embarqué dans l'app (~5 Mo) ; `%LOCALAPPDATA%\TabletApp\models\sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20` prioritaire si complet (réglages perso). Seuils réglables (section `WakeWord`).
 
 ## Mises à jour (Velopack + NAS)
 

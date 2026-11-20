@@ -1,0 +1,372 @@
+using System.Net.WebSockets;
+using System.Text;
+using System.Text.Json;
+
+namespace TabletApp.AI;
+
+/// <summary>Socket WebSocket injectable (réel ou fake en tests).</summary>
+internal interface ILiveSocket : IAsyncDisposable
+{
+    string? LastError { get; }
+    string? LastCloseStatus { get; }
+    Task ConnectAsync(string url, string apiKey, CancellationToken ct);
+    Task SendAsync(string json, CancellationToken ct);
+    Task<string?> ReceiveAsync(CancellationToken ct);
+    Task CloseAsync(CancellationToken ct);
+}
+
+/// <summary>Micro streaming injectable (16 kHz mono 16 bits).</summary>
+internal interface ILiveMic : IDisposable
+{
+    event Action<byte[]>? Chunk;
+    void Start();
+    void Stop();
+}
+
+/// <summary>Haut-parleur streaming injectable (PCM 24 kHz).</summary>
+internal interface ILivePlayer : IDisposable
+{
+    void PlayChunk(byte[] pcm24k);
+    void Clear();
+    void Start();
+    void Stop();
+}
+
+/// <summary>Événements de session vers l'app (sur threads de fond !).</summary>
+internal sealed record LiveCallbacks(
+    Action<string> OnEmotion,
+    Action<string> OnHeardTranscript,
+    Action<string> OnRobotTranscript,
+    Action<bool> OnSpeaking,
+    Action<TabletApp.UI.VoiceGlow> OnGlow,
+    Action OnUserSpeech,
+    Action<string> OnLog);
+
+/// <summary>
+/// Session vocale Live : micro streamé, audio modèle joué, tools exécutés,
+/// interruptions gérées, fin sur silence local prolongé. Transport injecté.
+/// </summary>
+internal sealed class LiveSession
+{
+    internal const string GreetingPrompt =
+        "L'enfant vient d'arriver. Salue-le en un seul mot : Bonjour.";
+
+    private readonly string _apiKey;
+    private readonly string _systemPrompt;
+    private readonly IReadOnlyList<string> _emotions;
+    private readonly ILiveSocket _socket;
+    private readonly ILiveMic _mic;
+    private readonly ILivePlayer _player;
+    private readonly LiveCallbacks _events;
+    private readonly TimeSpan _idleTimeout;
+    private readonly TimeSpan _turnTimeout;
+
+    private readonly object _sync = new();
+    private DateTime _lastSpeech = DateTime.UtcNow;
+    private bool _wasSpeech;
+    private DateTime _lastModelActivity = DateTime.MinValue;
+    private bool _turnCompleteSent;
+    private bool _heardSpeech;
+    private volatile bool _speaking;
+    private DateTime _speakEndedAt = DateTime.MinValue;
+    private CancellationTokenSource? _stop;
+
+    public LiveSession(
+        string apiKey, string systemPrompt, IReadOnlyList<string> emotions,
+        ILiveSocket socket, ILiveMic mic, ILivePlayer player,
+        LiveCallbacks events, TimeSpan? idleTimeout = null, TimeSpan? turnTimeout = null)
+    {
+        _apiKey = apiKey;
+        _systemPrompt = systemPrompt;
+        _emotions = emotions;
+        _socket = socket;
+        _mic = mic;
+        _player = player;
+        _events = events;
+        _idleTimeout = idleTimeout ?? TimeSpan.FromSeconds(60);
+        _turnTimeout = turnTimeout ?? TimeSpan.FromMilliseconds(1200);
+    }
+
+    public async Task RunAsync(CancellationToken ct)
+    {
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        _stop = stop;
+        var setupWatch = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            await _socket.ConnectAsync(
+                LiveProtocol.Endpoint, _apiKey, stop.Token).ConfigureAwait(false);
+            string setupJson = LiveProtocol.BuildSetup(_systemPrompt, _emotions);
+            await _socket.SendAsync(setupJson, stop.Token).ConfigureAwait(false);
+            await WaitForSetupAsync(setupJson, stop.Token, ct).ConfigureAwait(false);
+            _events.OnLog($"Live : session prête en {setupWatch.Elapsed.TotalSeconds:F1} s.");
+            _events.OnGlow(TabletApp.UI.VoiceGlow.Listening);
+            await _socket.SendAsync(
+                LiveProtocol.BuildClientTurn(GreetingPrompt), stop.Token).ConfigureAwait(false);
+            _mic.Chunk += OnMicChunk;
+            _mic.Start();
+            _player.Start();
+            try
+            {
+                await ReceiveLoopAsync(stop).ConfigureAwait(false);
+            }
+            finally
+            {
+                _mic.Stop();
+            }
+        }
+        finally
+        {
+            _events.OnSpeaking(false);
+            _events.OnGlow(TabletApp.UI.VoiceGlow.None);
+            try
+            {
+                await _socket.CloseAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    public void RequestStop()
+    {
+        try
+        {
+            _stop?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+
+    private async Task WaitForSetupAsync(string setupJson, CancellationToken linked, CancellationToken user)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(linked);
+        timeout.CancelAfter(TimeSpan.FromSeconds(20));
+        try
+        {
+            while (true)
+            {
+                string? message = await _socket.ReceiveAsync(timeout.Token).ConfigureAwait(false);
+                if (message is null)
+                {
+                    _events.OnLog($"Live : setup rejeté ({_socket.LastError ?? _socket.LastCloseStatus ?? "sans détail"}).");
+                    _events.OnLog("Live : setup envoyé : " + setupJson);
+                    throw new InvalidOperationException("Live fermé pendant le setup.");
+                }
+                if (LiveProtocol.ParseUpdate(message).SetupComplete)
+                {
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (!user.IsCancellationRequested)
+        {
+            throw new TimeoutException("Live : setup sans réponse (20 s).");
+        }
+    }
+
+    private async Task ReceiveLoopAsync(CancellationTokenSource stop)
+    {
+        var robotText = new StringBuilder();
+        while (!stop.IsCancellationRequested)
+        {
+            string? message;
+            try
+            {
+                message = await _socket.ReceiveAsync(stop.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            if (message is null)
+            {
+                break;
+            }
+            LiveServerUpdate update;
+            try
+            {
+                update = LiveProtocol.ParseUpdate(message);
+            }
+            catch (JsonException)
+            {
+                _events.OnLog("Live : message illisible ignoré.");
+                continue;
+            }
+            if (update.Audio is { Length: > 0 } pcm)
+            {
+                double lag;
+                lock (_sync)
+                {
+                    _lastModelActivity = DateTime.UtcNow;
+                    _turnCompleteSent = false;
+                    lag = (DateTime.UtcNow - _lastSpeech).TotalSeconds;
+                }
+                if (!_speaking)
+                {
+                    _speaking = true;
+                    _events.OnSpeaking(true);
+                    _events.OnGlow(TabletApp.UI.VoiceGlow.Thinking);
+                    _events.OnLog($"Live : réponse vocale après {lag:F1} s.");
+                }
+                _player.PlayChunk(pcm);
+            }
+            if (update.InputTranscript is { } heard)
+            {
+                _events.OnHeardTranscript(heard);
+            }
+            if (update.OutputTranscript is { } said)
+            {
+                lock (_sync)
+                {
+                    _lastModelActivity = DateTime.UtcNow;
+                    _turnCompleteSent = false;
+                }
+                robotText.Append(said);
+            }
+            if (update.ToolCalls.Count > 0)
+            {
+                lock (_sync)
+                {
+                    _lastModelActivity = DateTime.UtcNow;
+                    _turnCompleteSent = false;
+                }
+            }
+            foreach (LiveToolCall call in update.ToolCalls)
+            {
+                if (call.Name == "set_emotion" && call.Emotion is { } feeling)
+                {
+                    _events.OnEmotion(feeling);
+                }
+                await _socket.SendAsync(
+                    LiveProtocol.BuildToolResponse(new[] { (call.Id, call.Name) }),
+                    stop.Token).ConfigureAwait(false);
+            }
+            if (update.CancelledIds.Count > 0)
+            {
+                _events.OnLog($"Live : {update.CancelledIds.Count} appel(s) annulé(s).");
+            }
+            if (update.Interrupted)
+            {
+                _player.Clear();
+                lock (_sync)
+                {
+                    _speakEndedAt = DateTime.UtcNow;
+                }
+                _speaking = false;
+                _events.OnSpeaking(false);
+                _events.OnGlow(TabletApp.UI.VoiceGlow.Listening);
+                FlushRobotText(robotText, coupé: true);
+            }
+            if (update.TurnComplete)
+            {
+                lock (_sync)
+                {
+                    _speakEndedAt = DateTime.UtcNow;
+                }
+                _speaking = false;
+                _events.OnSpeaking(false);
+                _events.OnGlow(TabletApp.UI.VoiceGlow.Listening);
+                FlushRobotText(robotText, coupé: false);
+            }
+            if (update.GoAway)
+            {
+                _events.OnLog("Live : serveur partant, fin de session.");
+                break;
+            }
+        }
+
+        void FlushRobotText(StringBuilder sb, bool coupé)
+        {
+            if (sb.Length > 0)
+            {
+                _events.OnRobotTranscript(sb.ToString() + (coupé ? " (coupé)" : ""));
+                sb.Clear();
+            }
+        }
+    }
+
+    // Semi-duplex strict : le micro est sourd pendant la parole du robot,
+    // plus une queue couvrant la fin du buffer audio (pas d'auto-écoute).
+    internal static readonly TimeSpan SpeakMuteTail = TimeSpan.FromMilliseconds(400);
+
+    internal static bool ShouldMuteMic(bool speaking, DateTime speakEndedAt, DateTime now, TimeSpan tail)
+    {
+        return speaking || now - speakEndedAt < tail;
+    }
+
+    internal static bool ShouldSendTurnComplete(
+        bool sent, bool heardSpeech, DateTime lastSpeech, DateTime lastModel,
+        DateTime now, TimeSpan silence)
+    {
+        return !sent && heardSpeech && lastSpeech > lastModel && now - lastSpeech >= silence;
+    }
+
+    private void OnMicChunk(byte[] pcm16k)
+    {
+        double rms = NAudioVoice.ComputeRms(pcm16k, pcm16k.Length);
+        bool send = true;
+        bool endTurn = false;
+        bool endSession = false;
+        lock (_sync)
+        {
+            DateTime now = DateTime.UtcNow;
+            bool muted = ShouldMuteMic(_speaking, _speakEndedAt, now, SpeakMuteTail);
+            if (!muted && rms >= NAudioVoice.SpeechRmsThreshold)
+            {
+                _lastSpeech = now;
+                _heardSpeech = true;
+                if (!_wasSpeech)
+                {
+                    _wasSpeech = true;
+                    _events.OnUserSpeech();
+                }
+            }
+            else
+            {
+                _wasSpeech = false;
+            }
+            // Semi-duplex strict : sourd pendant la parole du robot (+ queue).
+            send = !muted;
+            if (!muted && now - _lastSpeech > _idleTimeout)
+            {
+                endSession = true;
+            }
+            else if (!muted && ShouldSendTurnComplete(
+                _turnCompleteSent, _heardSpeech, _lastSpeech, _lastModelActivity,
+                now, _turnTimeout))
+            {
+                _turnCompleteSent = true;
+                endTurn = true;
+            }
+        }
+        if (send)
+        {
+            _ = SendAsync(LiveProtocol.BuildAudioChunk(pcm16k));
+        }
+        if (endTurn)
+        {
+            _events.OnLog("Live : fin de phrase détectée (client).");
+            _ = SendAsync(LiveProtocol.BuildTurnComplete());
+        }
+        if (endSession)
+        {
+            _events.OnLog("Live : silence prolongé, fin de session.");
+            RequestStop();
+        }
+    }
+
+    private async Task SendAsync(string json)
+    {
+        try
+        {
+            await _socket.SendAsync(json, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Envoi en tâche de fond : l'échec remontera via la boucle.
+        }
+    }
+}

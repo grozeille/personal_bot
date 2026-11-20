@@ -35,6 +35,7 @@ internal sealed class MainForm : Form
     private bool _voiceRunning;
     private bool _chatRunning;
     private CancellationTokenSource? _chatCts;
+    private WakeWordListener? _wake;
 
     // Empêche la mise en veille de l'écran / du système (tête de robot allumée en continu).
     [DllImport("kernel32.dll")]
@@ -150,6 +151,7 @@ internal sealed class MainForm : Form
         {
             _ = CheckForUpdatesAsync();
             PromptApiKeyIfMissing();
+            StartWakeWord();
             if (Program.AutoVoiceTest)
             {
                 _ = RunVoiceTestAsync();
@@ -183,6 +185,8 @@ internal sealed class MainForm : Form
 
     protected override void OnFormClosed(FormClosedEventArgs e)
     {
+        _wake?.Dispose();
+        _wake = null;
         Application.RemoveMessageFilter(_tapFilter);
         SetThreadExecutionState(ES_CONTINUOUS);
         Cursor.Show();
@@ -275,6 +279,7 @@ internal sealed class MainForm : Form
         }
         _voiceRunning = true;
         _face.Concentrated = true;
+        _wake?.Stop();
         RobotExpression previous = _face.CurrentExpression;
         try
         {
@@ -284,7 +289,7 @@ internal sealed class MainForm : Form
             var test = new VoiceTest(
                 (text, ct) => SpeakAsync(speech, text, ct),
                 (duration, ct) => ListenAsync(speech, duration, ct),
-                expr => _face.SetExpression(expr));
+                expr => Ui(() => _face.SetExpression(expr)));
             string? heard = await test.RunAsync(previous, CancellationToken.None);
             VoiceLog.Info(VoiceTest.HearsBonjour(heard) ? "Bonjour détecté → cœur." : "Pas de bonjour.");
         }
@@ -298,8 +303,46 @@ internal sealed class MainForm : Form
         finally
         {
             _face.Concentrated = false;
+            _wake?.Start();
             _voiceRunning = false;
         }
+    }
+
+    private void StartWakeWord()
+    {
+        try
+        {
+            WakeWordOptions options = WakeWordOptions.Load();
+            if (!SherpaWakeDetector.TryCreate(
+                options.Threshold, options.Score,
+                out SherpaWakeDetector? detector) || detector is null)
+            {
+                VoiceLog.Info("Wake word désactivé : modèle absent ou invalide.");
+                return;
+            }
+            var listener = new WakeWordListener(detector);
+            listener.Detected += () => BeginInvoke(new Action(OnWakeWord));
+            _wake = listener;
+            listener.Start();
+            VoiceLog.Info("Wake word « Hey Patate » en écoute.");
+        }
+        catch (Exception ex)
+        {
+            VoiceLog.Error("Wake word : " + ex.Message);
+            _wake?.Dispose();
+            _wake = null;
+        }
+    }
+
+    private void OnWakeWord()
+    {
+        if (_chatRunning || _voiceRunning || _confirm.Active || _applying)
+        {
+            return;
+        }
+        VoiceLog.Info("Hey Patate détecté.");
+        _face.NotifyActivity();
+        _ = RunConversationAsync();
     }
 
     private void ToggleConversation()
@@ -320,35 +363,102 @@ internal sealed class MainForm : Form
     /// Discussion libre (touche D, flag --discuter) : salutations, boucle
     /// écoute → pense → répond avec émotion, adieux après 2 silences ou D.
     /// </summary>
+    private async Task RunLiveAsync(string key, CancellationToken ct)
+    {
+        await using var socket = new LiveClientWebSocket();
+        using var mic = new LiveMic();
+        using var player = new LivePlayer();
+        var session = new LiveSession(
+            key, GeminiBrain.LiveSystemPrompt, GeminiBrain.EmotionNames,
+            socket, mic, player,
+            new LiveCallbacks(
+                OnEmotion: emotion => Ui(() =>
+                {
+                    if (ExpressionController.TryParse(emotion, out RobotExpression parsed))
+                    {
+                        _face.SetExpression(parsed);
+                    }
+                    VoiceLog.Info($"Emotion : {emotion}.");
+                }),
+                OnHeardTranscript: text => VoiceLog.Info($"Entendu : '{text}'."),
+                OnRobotTranscript: text => VoiceLog.Info($"Robot : {text}"),
+                OnSpeaking: speaking => Ui(() => _face.Speaking = speaking),
+                OnGlow: glow => Ui(() => _face.Glow = glow),
+                OnUserSpeech: () => Ui(() => _face.NotifyActivity()),
+                OnLog: VoiceLog.Info));
+        await session.RunAsync(ct);
+    }
+
+    private async Task RunUnaryAsync(string key, RobotExpression previous, CancellationToken ct)
+    {
+        var speech = new GeminiSpeech(key);
+        var brain = new GeminiBrain(key);
+        var chat = new Conversation(
+            (duration, _) => ListenAsync(speech, duration, ct),
+            async (history, heard, _) =>
+            {
+                Ui(() => _face.SetExpression(RobotExpression.Thinking));
+                Ui(() => _face.Glow = VoiceGlow.Thinking);
+                Ui(() => _face.NotifyActivity());
+                var watch = System.Diagnostics.Stopwatch.StartNew();
+                var thought = await brain.ThinkAsync(history, heard, ct);
+                VoiceLog.Info($"Pense : '{thought.Reply ?? "(rien)"}' + " +
+                    $"{thought.Emotion ?? "(neutre)"} ({watch.Elapsed.TotalSeconds:F1} s).");
+                return thought;
+            },
+            (text, _) => SpeakAsync(speech, text, ct),
+            expr => Ui(() => _face.SetExpression(expr)));
+        await chat.RunAsync(previous, ct);
+    }
+
+    private void Ui(Action action)
+    {
+        try
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(action);
+            }
+            else
+            {
+                action();
+            }
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+        }
+    }
+
     private async Task RunConversationAsync()
     {
+        if (_chatRunning)
+        {
+            return;
+        }
         _chatRunning = true;
         _chatCts = new CancellationTokenSource();
         _confirm.Cancel();
         _face.Concentrated = true;
+        _wake?.Stop();
         RobotExpression previous = _face.CurrentExpression;
         try
         {
             string key = GeminiKey.Resolve()
                 ?? throw new InvalidOperationException("Clé Gemini manquante.");
-            var speech = new GeminiSpeech(key);
-            var brain = new GeminiBrain(key);
-            var chat = new Conversation(
-                (duration, ct) => ListenAsync(speech, duration, ct),
-                async (history, heard, ct) =>
-                {
-                    _face.SetExpression(RobotExpression.Thinking);
-                    _face.Glow = VoiceGlow.Thinking;
-                    _face.NotifyActivity();
-                    var thought = await brain.ThinkAsync(history, heard, ct);
-                    VoiceLog.Info($"Pense : '{thought.Reply ?? "(rien)"}' + {thought.Emotion ?? "(neutre)"}.");
-                    return thought;
-                },
-                (text, ct) => SpeakAsync(speech, text, ct),
-                expr => _face.SetExpression(expr));
-            await chat.RunAsync(previous, _chatCts.Token);
+            try
+            {
+                await RunLiveAsync(key, _chatCts.Token);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                VoiceLog.Error($"Live : {ex.Message} - repli unaire.");
+                await RunUnaryAsync(key, previous, _chatCts.Token);
+            }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             VoiceLog.Error(ex.Message);
             _face.SetExpression(RobotExpression.Dead);
@@ -358,6 +468,7 @@ internal sealed class MainForm : Form
         finally
         {
             _face.Concentrated = false;
+            _wake?.Start();
             _chatRunning = false;
             _chatCts?.Dispose();
             _chatCts = null;
@@ -367,17 +478,21 @@ internal sealed class MainForm : Form
     private async Task SpeakAsync(GeminiSpeech speech, string text, CancellationToken ct)
     {
         VoiceLog.Info($"Robot : {text}");
-        _face.Glow = VoiceGlow.None;
+        Ui(() => _face.Glow = VoiceGlow.None);
+        var watch = System.Diagnostics.Stopwatch.StartNew();
         byte[] wav = await speech.SpeakAsync(text, ct);
-        _face.Speaking = true;
+        VoiceLog.Info($"Synthèse : {watch.Elapsed.TotalSeconds:F1} s.");
+        watch.Restart();
+        Ui(() => _face.Speaking = true);
         try
         {
             await NAudioVoice.PlayAsync(wav, ct);
         }
         finally
         {
-            _face.Speaking = false;
+            Ui(() => _face.Speaking = false);
         }
+        VoiceLog.Info($"Lecture : {watch.Elapsed.TotalSeconds:F1} s.");
     }
 
     private async Task<string?> ListenAsync(GeminiSpeech speech, TimeSpan duration, CancellationToken ct)
@@ -395,13 +510,14 @@ internal sealed class MainForm : Form
                 return null;
             }
             _face.Glow = VoiceGlow.Thinking;
+            var watch = System.Diagnostics.Stopwatch.StartNew();
             string? heard = await speech.TranscribeAsync(clip.Wav, ct);
-            VoiceLog.Info($"Entendu : '{heard ?? "(rien)"}'.");
+            VoiceLog.Info($"Entendu : '{heard ?? "(rien)"}' (STT {watch.Elapsed.TotalSeconds:F1} s).");
             return heard;
         }
         finally
         {
-            _face.Glow = VoiceGlow.None;
+            Ui(() => _face.Glow = VoiceGlow.None);
         }
     }
 

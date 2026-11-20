@@ -1,6 +1,6 @@
-# Rapport de tests BDD — 2026-11-19 16:57
+# Rapport de tests BDD — 2026-11-19 22:16
 
-*32 scénarios : 32 OK, 0 KO.*
+*36 scénarios : 36 OK, 0 KO.*
 
 ## Clignement des yeux — Clignement régulier sur 30 secondes — OK
 
@@ -93,6 +93,14 @@
 ## Regard de surveillance — Saccades régulières sur 30 secondes — OK
 
 ![Saccades régulières sur 30 secondes](Regard_de_surveillance_Saccades_régulières_sur_30_secondes_1.png)
+
+## Session Live — Connexion live impossible — OK
+
+## Session Live — Interruption vide le haut-parleur — OK
+
+## Session Live — Le robot sourd pendant sa propre parole — OK
+
+## Session Live — Session live complète avec émotion — OK
 
 ## Test voix — Bonjour entendu affiche le cœur — OK
 

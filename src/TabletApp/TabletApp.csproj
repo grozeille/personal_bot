@@ -21,6 +21,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Modèle wake word embarqué (~5 Mo) : publié et installé via Velopack. -->
+    <Content Include="Models\kws\*.*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="TabletApp.Tests" />
   </ItemGroup>
 
@@ -39,6 +47,8 @@
     <PackageReference Include="Svg.Skia" Version="5.2.3" />
     <PackageReference Include="Velopack" Version="1.2.161" />
     <PackageReference Include="NAudio" Version="2.3.0" />
+    <PackageReference Include="org.k2fsa.sherpa.onnx" Version="2.0.2" />
+    <PackageReference Include="org.k2fsa.sherpa.onnx.runtime.win-x86" Version="2.0.2" />
   </ItemGroup>
 
 </Project>
