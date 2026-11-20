@@ -1,0 +1,103 @@
+{
+  "_comment": "Bibliotheque de gestes 3-DOF — source de verite cote tablette. La tablette expanse et envoie la piste moves (ms) au simu/Pi. Expression = nom du contrat set_emotion (RobotExpression).",
+  "gestures": {
+    "nod_yes": {
+      "expression": "happy",
+      "intent": "Acquiescement",
+      "moves": [
+        { "yaw": 0, "pitch": 0, "roll": 0, "t": 0 },
+        { "yaw": 0, "pitch": 20, "roll": 0, "t": 300 },
+        { "yaw": 0, "pitch": -8, "roll": 0, "t": 550 },
+        { "yaw": 0, "pitch": 0, "roll": 0, "t": 800 }
+      ]
+    },
+    "shake_no": {
+      "expression": "neutral",
+      "intent": "Refus ferme",
+      "moves": [
+        { "yaw": 0, "pitch": 0, "roll": 0, "t": 0 },
+        { "yaw": -25, "pitch": 0, "roll": 0, "t": 350 },
+        { "yaw": 25, "pitch": 0, "roll": 0, "t": 700 },
+        { "yaw": -15, "pitch": 0, "roll": 0, "t": 950 },
+        { "yaw": 0, "pitch": 0, "roll": 0, "t": 1200 }
+      ]
+    },
+    "tilt_curious": {
+      "expression": "thinking",
+      "intent": "Curiosite, ecoute penchee",
+      "moves": [
+        { "yaw": 0, "pitch": 5, "roll": 0, "t": 0 },
+        { "yaw": 0, "pitch": 5, "roll": 18, "t": 500 },
+        { "yaw": 0, "pitch": 5, "roll": 18, "t": 900 },
+        { "yaw": 0, "pitch": 0, "roll": 0, "t": 1300 }
+      ]
+    },
+    "greet_wake": {
+      "expression": "happy",
+      "intent": "Salut, reveil",
+      "moves": [
+        { "yaw": 0, "pitch": 12, "roll": 0, "t": 0 },
+        { "yaw": -12, "pitch": 8, "roll": 0, "t": 400 },
+        { "yaw": 12, "pitch": 8, "roll": 0, "t": 800 },
+        { "yaw": 0, "pitch": 5, "roll": 0, "t": 1100 }
+      ]
+    },
+    "look_away_shy": {
+      "expression": "neutral",
+      "intent": "Timidite, detourne le regard",
+      "moves": [
+        { "yaw": 0, "pitch": 0, "roll": 0, "t": 0 },
+        { "yaw": 40, "pitch": -10, "roll": 5, "t": 700 },
+        { "yaw": 40, "pitch": -10, "roll": 5, "t": 1300 },
+        { "yaw": 0, "pitch": 0, "roll": 0, "t": 2000 }
+      ]
+    },
+    "excited_wiggle": {
+      "expression": "laugh",
+      "intent": "Joie intense",
+      "moves": [
+        { "yaw": 0, "pitch": -5, "roll": 0, "t": 0 },
+        { "yaw": 0, "pitch": -5, "roll": 12, "t": 200 },
+        { "yaw": 0, "pitch": -5, "roll": -12, "t": 400 },
+        { "yaw": 0, "pitch": -5, "roll": 12, "t": 600 },
+        { "yaw": 0, "pitch": 10, "roll": 0, "t": 900 }
+      ]
+    },
+    "sleepy_bow": {
+      "expression": "tired",
+      "intent": "Fatigue, synchroniser avec le son baillement",
+      "moves": [
+        { "yaw": 0, "pitch": 0, "roll": 0, "t": 0 },
+        { "yaw": 0, "pitch": 35, "roll": 0, "t": 1200 },
+        { "yaw": 0, "pitch": 35, "roll": 0, "t": 2200 },
+        { "yaw": 0, "pitch": 0, "roll": 0, "t": 3000 }
+      ]
+    },
+    "listening": {
+      "expression": "neutral",
+      "intent": "Ecoute attentive (boucle douce cote tablette)",
+      "moves": [
+        { "yaw": 0, "pitch": 5, "roll": 0, "t": 0 },
+        { "yaw": 0, "pitch": 8, "roll": 0, "t": 600 },
+        { "yaw": 0, "pitch": 5, "roll": 0, "t": 1200 }
+      ]
+    },
+    "confused_scan": {
+      "expression": "thinking",
+      "intent": "Incomprehension, balayage",
+      "moves": [
+        { "yaw": 0, "pitch": 5, "roll": 8, "t": 0 },
+        { "yaw": -30, "pitch": 5, "roll": 8, "t": 800 },
+        { "yaw": 30, "pitch": 5, "roll": -8, "t": 1800 },
+        { "yaw": 0, "pitch": 0, "roll": 0, "t": 2400 }
+      ]
+    },
+    "reset_neutral": {
+      "expression": "neutral",
+      "intent": "Retour repos",
+      "moves": [
+        { "yaw": 0, "pitch": 0, "roll": 0, "t": 600 }
+      ]
+    }
+  }
+}

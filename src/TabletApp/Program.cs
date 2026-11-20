@@ -8,6 +8,9 @@ internal static class Program
     [DllImport("kernel32.dll")]
     private static extern bool AttachConsole(int processId);
 
+    /// <summary>Flag --head-test : joue tilt_curious (tete + visage) au demarrage.</summary>
+    internal static bool AutoHeadTest { get; private set; }
+
     /// <summary>Flag --voice-test : lance le scénario voix une fois au démarrage.</summary>
     internal static bool AutoVoiceTest { get; private set; }
 
@@ -45,6 +48,19 @@ internal static class Program
             return;
         }
 
+        if (args.Contains("--sons"))
+        {
+            Environment.Exit(SelfTest.Sounds() ? 0 : 1);
+            return;
+        }
+
+        if (args.Contains("--wake-probe"))
+        {
+            Environment.Exit(SelfTest.WakeProbe() ? 0 : 1);
+            return;
+        }
+
+        AutoHeadTest = args.Contains("--head-test");
         AutoVoiceTest = args.Contains("--voice-test");
         AutoDiscuss = args.Contains("--discuter");
 

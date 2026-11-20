@@ -4,3 +4,4 @@ config_version=5
 [application]
 
 config/name="RobotCompanionSimulator"
+run/main_scene="res://Main.tscn"

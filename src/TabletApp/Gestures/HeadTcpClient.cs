@@ -1,0 +1,37 @@
+using System.Net.Sockets;
+using System.Text;
+using System.Text.Json;
+
+namespace TabletApp.Gestures;
+
+/// <summary>
+/// Envoi TCP (JSON + \n) vers le simu Godot ou le futur serveur Pi.
+/// Une connexion par geste : simple, sans etat, robuste aux redemarrages.
+/// </summary>
+internal sealed class HeadTcpClient(string host, int port)
+{
+    private readonly string _host = host;
+    private readonly int _port = port;
+
+    public async Task<string> SendMovesAsync(string movesJson, CancellationToken ct = default)
+    {
+        // Minifie (gestures.json est indente pour les humains ; le protocole
+        // exige une ligne = un message, sans \n internes).
+        using JsonDocument doc = JsonDocument.Parse(movesJson);
+        string compact = JsonSerializer.Serialize(doc.RootElement);
+        using var client = new TcpClient();
+        await client.ConnectAsync(_host, _port, ct).ConfigureAwait(false);
+        await using var stream = client.GetStream();
+        byte[] payload = Encoding.UTF8.GetBytes("{\"moves\":" + compact + "}\n");
+        await stream.WriteAsync(payload, ct).ConfigureAwait(false);
+        using var reader = new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
+        string? reply = await reader.ReadLineAsync(ct).ConfigureAwait(false);
+        return reply ?? "";
+    }
+
+    public static string Host =>
+        Environment.GetEnvironmentVariable("HEAD_SIM_HOST") ?? "127.0.0.1";
+
+    public static int Port =>
+        int.TryParse(Environment.GetEnvironmentVariable("HEAD_SIM_PORT"), out int p) ? p : 9080;
+}

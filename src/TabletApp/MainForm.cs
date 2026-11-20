@@ -2,6 +2,7 @@ using System.Drawing;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 using TabletApp.AI;
+using TabletApp.Gestures;
 using TabletApp.UI;
 using TabletApp.Update;
 
@@ -60,6 +61,8 @@ internal sealed class MainForm : Form
 
         _face = new RobotFaceRenderer { Dock = DockStyle.Fill };
         Controls.Add(_face);
+        _face.YawnStarted += () => _ = PlaySoundAsync("baillement");
+        _face.WokeUp += () => _ = PlaySoundAsync("reveil");
 
         UpdateOptions options = UpdateOptions.Load();
         _updater = new RobotUpdater(new VelopackUpdateSource(options.Source));
@@ -118,6 +121,11 @@ internal sealed class MainForm : Form
             {
                 _ = RunVoiceTestAsync();
             }
+            else if (e.KeyCode == Keys.H)
+            {
+                // Dev : geste tete + visage couples (simu Godot ou Pi sur HEAD_SIM_HOST:HEAD_SIM_PORT).
+                _ = RunHeadTestAsync("tilt_curious");
+            }
             else if (e.KeyCode == Keys.D)
             {
                 ToggleConversation();
@@ -152,6 +160,10 @@ internal sealed class MainForm : Form
             _ = CheckForUpdatesAsync();
             PromptApiKeyIfMissing();
             StartWakeWord();
+            if (Program.AutoHeadTest)
+            {
+                _ = RunHeadTestAsync();
+            }
             if (Program.AutoVoiceTest)
             {
                 _ = RunVoiceTestAsync();
@@ -267,6 +279,23 @@ internal sealed class MainForm : Form
     }
 
     /// <summary>
+    /// Test tete (touche H, flag --head-test) : geste + visage couples.
+    /// Tilt_curious par defaut : visage Thinking + piste TCP vers simu/Pi.
+    /// </summary>
+    private async Task RunHeadTestAsync(string gesture = "tilt_curious")
+    {
+        try
+        {
+            string result = await HeadTest.PlayAsync(_face, gesture).ConfigureAwait(true);
+            VoiceLog.Info(result);
+        }
+        catch (Exception ex)
+        {
+            VoiceLog.Error(ex.Message);
+        }
+    }
+
+    /// <summary>
     /// Test voix #5 (touche T, flag --voice-test) : dit bonjour (TTS Gemini),
     /// écoute 10 s (STT Gemini), visage cœur si « bonjour » entendu. Visage
     /// mort 2 s si échec (clé, micro, réseau). Tourne sur le thread UI.
@@ -296,6 +325,7 @@ internal sealed class MainForm : Form
         catch (Exception ex)
         {
             VoiceLog.Error(ex.Message);
+            _ = PlaySoundAsync("erreur");
             _face.SetExpression(RobotExpression.Dead);
             await Task.Delay(TimeSpan.FromSeconds(2));
             _face.SetExpression(previous);
@@ -320,12 +350,20 @@ internal sealed class MainForm : Form
                 VoiceLog.Info("Wake word désactivé : modèle absent ou invalide.");
                 return;
             }
-            var listener = new WakeWordListener(detector);
+            var listener = new WakeWordListener(detector, gateRms: options.GateRms);
             listener.Detected += () => BeginInvoke(new Action(OnWakeWord));
-            _wake = listener;
+
+            listener.Tick += tick =>
+            {
+                if (tick.FeedingStarted) { VoiceLog.Info("Wake : parole entendue, analyse..."); }
+                if (tick.FeedingStopped) { VoiceLog.Info("Wake : silence, pas de réveil."); }
+                if (tick.Detected) { VoiceLog.Info("Wake : motif reconnu."); }
+            };            _wake = listener;
             listener.Start();
             VoiceLog.Info("Wake word « Hey Patate » en écoute.");
-        }
+
+            VoiceLog.Info($"Wake : porte {options.GateRms:F0} RMS, seuil {options.Threshold:F2}, " +
+                $"modèle {SherpaWakeDetector.ResolveModelDir()}.");        }
         catch (Exception ex)
         {
             VoiceLog.Error("Wake word : " + ex.Message);
@@ -369,7 +407,7 @@ internal sealed class MainForm : Form
         using var mic = new LiveMic();
         using var player = new LivePlayer();
         var session = new LiveSession(
-            key, GeminiBrain.LiveSystemPrompt, GeminiBrain.EmotionNames,
+            key, GeminiBrain.LiveSystemPrompt, GeminiBrain.EmotionNames, RobotSounds.Names,
             socket, mic, player,
             new LiveCallbacks(
                 OnEmotion: emotion => Ui(() =>
@@ -380,6 +418,18 @@ internal sealed class MainForm : Form
                     }
                     VoiceLog.Info($"Emotion : {emotion}.");
                 }),
+                OnSound: sound =>
+                {
+                    byte[]? pcm = RobotSounds.Render(sound);
+                    if (pcm is not null)
+                    {
+                        player.PlayChunk(pcm);
+                    }
+                    else
+                    {
+                        VoiceLog.Info($"Son inconnu ignoré : {sound}.");
+                    }
+                },
                 OnHeardTranscript: text => VoiceLog.Info($"Entendu : '{text}'."),
                 OnRobotTranscript: text => VoiceLog.Info($"Robot : {text}"),
                 OnSpeaking: speaking => Ui(() => _face.Speaking = speaking),
@@ -402,12 +452,14 @@ internal sealed class MainForm : Form
                 Ui(() => _face.NotifyActivity());
                 var watch = System.Diagnostics.Stopwatch.StartNew();
                 var thought = await brain.ThinkAsync(history, heard, ct);
+                string son = thought.Sound is null ? "" : $" + son {thought.Sound}";
                 VoiceLog.Info($"Pense : '{thought.Reply ?? "(rien)"}' + " +
-                    $"{thought.Emotion ?? "(neutre)"} ({watch.Elapsed.TotalSeconds:F1} s).");
+                    $"{thought.Emotion ?? "(neutre)"}{son} ({watch.Elapsed.TotalSeconds:F1} s).");
                 return thought;
             },
             (text, _) => SpeakAsync(speech, text, ct),
-            expr => Ui(() => _face.SetExpression(expr)));
+            expr => Ui(() => _face.SetExpression(expr)),
+            playSound: (sound, _) => PlaySoundAsync(sound));
         await chat.RunAsync(previous, ct);
     }
 
@@ -463,6 +515,7 @@ internal sealed class MainForm : Form
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             VoiceLog.Error(ex.Message);
+            _ = PlaySoundAsync("erreur");
             _face.SetExpression(RobotExpression.Dead);
             await Task.Delay(TimeSpan.FromSeconds(2));
             _face.SetExpression(previous);
@@ -474,6 +527,25 @@ internal sealed class MainForm : Form
             _chatRunning = false;
             _chatCts?.Dispose();
             _chatCts = null;
+        }
+    }
+
+    /// <summary>Joue un petit son robot (nom inconnu ignoré, jamais d'exception).</summary>
+    private async Task PlaySoundAsync(string name)
+    {
+        try
+        {
+            byte[]? pcm = RobotSounds.Render(name);
+            if (pcm is null)
+            {
+                VoiceLog.Info($"Son inconnu ignoré : {name}.");
+                return;
+            }
+            await NAudioVoice.PlayAsync(RobotSounds.ToWav(pcm, 24000), CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            VoiceLog.Info($"Son {name} impossible : {ex.Message}.");
         }
     }
 
