@@ -443,6 +443,8 @@ internal sealed class MainForm : Form
         _confirm.Cancel();
         _face.Concentrated = true;
         _wake?.Stop();
+        VoiceLog.Info($"Prompt voix v{GeminiBrain.PromptVersion} (" +
+            (GeminiBrain.PersonalityCustom ? "personnalisé" : "défaut") + ").");
         RobotExpression previous = _face.CurrentExpression;
         try
         {

@@ -505,8 +505,19 @@ internal static class SelfTest
         string input = GeminiBrain.BuildInput(
             new List<(string Child, string Patate)> { ("a", "b") }, "coucou");
         bool inputOk = input.Contains("Enfant : coucou") && input.Contains("Patate : b");
-        bool ok = fullOk && wrappedOk && bareOk && noEmotionOk && emptyOk && inputOk;
-        log.Add($"GeminiBrain: réponse={fullOk && wrappedOk && bareOk && noEmotionOk && emptyOk}, " +
+        bool promptOk = GeminiBrain.DefaultPersonality.Contains("français")
+            && GeminiBrain.DefaultPersonality.Contains("Sujets interdits")
+            && GeminiBrain.BuildSystemPrompt(GeminiBrain.DefaultPersonality).Contains("\"reply\"") && GeminiBrain.BuildSystemPrompt(GeminiBrain.DefaultPersonality).Contains("\"emotion\"")
+            && GeminiBrain.BuildLivePrompt(GeminiBrain.DefaultPersonality).Contains("set_emotion");
+        (string fallbackText, bool fallbackCustom) = GeminiBrain.ResolvePersonality(
+            Path.Combine(Path.GetTempPath(), "patate-config-absente.json"));
+        promptOk = promptOk && !fallbackCustom && fallbackText == GeminiBrain.DefaultPersonality;
+        string customPath = Path.Combine(Path.GetTempPath(), "patate-config-personnalite.json");
+        File.WriteAllText(customPath, "{\"Gemini\": {\"Personality\": \"Sois bref.\"}}");
+        (string customText, bool customFlag) = GeminiBrain.ResolvePersonality(customPath);
+        promptOk = promptOk && customFlag && customText == "Sois bref.";
+        bool ok = fullOk && wrappedOk && bareOk && noEmotionOk && emptyOk && inputOk && promptOk;
+        log.Add($"GeminiBrain: réponse={fullOk && wrappedOk && bareOk && noEmotionOk && emptyOk}, prompt={promptOk}, " +
             $"entrée={inputOk} -> {(ok ? "OK" : "KO")}");
         return ok;
     }
