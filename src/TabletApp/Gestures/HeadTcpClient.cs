@@ -1,6 +1,7 @@
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using TabletApp.AI;
 
 namespace TabletApp.Gestures;
 
@@ -20,12 +21,21 @@ internal sealed class HeadTcpClient(string host, int port)
         using JsonDocument doc = JsonDocument.Parse(movesJson);
         string compact = JsonSerializer.Serialize(doc.RootElement);
         using var client = new TcpClient();
-        await client.ConnectAsync(_host, _port, ct).ConfigureAwait(false);
+        try
+        {
+            await client.ConnectAsync(_host, _port, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            VoiceLog.Error($"HEAD connexion {_host}:{_port} impossible ({ex.GetType().Name}) — simu/serveur lance ?");
+            throw;
+        }
         await using var stream = client.GetStream();
         byte[] payload = Encoding.UTF8.GetBytes("{\"moves\":" + compact + "}\n");
         await stream.WriteAsync(payload, ct).ConfigureAwait(false);
         using var reader = new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
         string? reply = await reader.ReadLineAsync(ct).ConfigureAwait(false);
+        VoiceLog.Info($"HEAD -> {_host}:{_port} : {reply}");
         return reply ?? "";
     }
 
