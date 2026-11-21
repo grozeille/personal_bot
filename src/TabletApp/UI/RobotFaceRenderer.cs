@@ -31,6 +31,10 @@ internal sealed class RobotFaceRenderer : UserControl
 
     public int Fps { get; private set; }
 
+    /// <summary>Début du bâillement / réveil (sons système).</summary>
+    public event Action? YawnStarted;
+    public event Action? WokeUp;
+
     /// <summary>Maj disponible : affiche l'icône en haut à droite.</summary>
     public bool UpdateAvailable { get; set; }
 
@@ -136,6 +140,7 @@ internal sealed class RobotFaceRenderer : UserControl
             if (_sleep.Current == SleepController.State.Yawning)
             {
                 _expression.SetExpression(RobotExpression.Tired, now);
+                YawnStarted?.Invoke();
             }
             else if (_sleep.Current == SleepController.State.Asleep)
             {
@@ -144,6 +149,7 @@ internal sealed class RobotFaceRenderer : UserControl
             else if (_sleep.Current == SleepController.State.Waking)
             {
                 _expression.SetExpression(RobotExpression.Neutral, now);
+                WokeUp?.Invoke();
             }
             _prevSleep = _sleep.Current;
         }

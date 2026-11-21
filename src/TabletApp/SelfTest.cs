@@ -54,7 +54,7 @@ internal static class SelfTest
             & CheckSteadyYawn(log) & CheckFaceEquivalence(log) & CheckIdleSleep(log)
             & CheckGeminiVoice(log) & CheckSpeakingMouth(log) & CheckVoiceActivity(log)
             & CheckGeminiBrain(log) & CheckVoiceGlow(log) & CheckWakeWord(log)
-            & CheckLiveMessages(log) & CheckRobotVoice(log) & CheckRobotSounds(log);
+            & CheckLiveMessages(log) & CheckRobotVoice(log) & CheckRobotSounds(log) & CheckMotionOptions(log);
         RenderFrames(log);
         RenderExpressionSheet(log);
         RenderTransitionFrame(log);
@@ -510,7 +510,8 @@ internal static class SelfTest
         bool promptOk = GeminiBrain.DefaultPersonality.Contains("français")
             && GeminiBrain.DefaultPersonality.Contains("Sujets interdits")
             && GeminiBrain.BuildSystemPrompt(GeminiBrain.DefaultPersonality).Contains("\"reply\"") && GeminiBrain.BuildSystemPrompt(GeminiBrain.DefaultPersonality).Contains("\"emotion\"")
-            && GeminiBrain.BuildLivePrompt(GeminiBrain.DefaultPersonality).Contains("set_emotion");
+            && GeminiBrain.BuildLivePrompt(GeminiBrain.DefaultPersonality).Contains("set_emotion")
+            && GeminiBrain.BuildLivePrompt(GeminiBrain.DefaultPersonality).Contains("play_fart");
         (string fallbackText, bool fallbackCustom) = GeminiBrain.ResolvePersonality(
             Path.Combine(Path.GetTempPath(), "patate-config-absente.json"));
         promptOk = promptOk && !fallbackCustom && fallbackText == GeminiBrain.DefaultPersonality;
@@ -622,6 +623,34 @@ internal static class SelfTest
         return ok;
     }
 
+    private static bool CheckMotionOptions(List<string> log)
+    {
+        // Cible tête : défauts, fichier custom, surcharge env.
+        TabletApp.Gestures.MotionOptions missing = TabletApp.Gestures.MotionOptions.Load(
+            Path.Combine(Path.GetTempPath(), "patate-motion-absent.json"));
+        bool defaultsOk = missing == TabletApp.Gestures.MotionOptions.Default;
+        string customPath = Path.Combine(Path.GetTempPath(), "patate-motion-test.json");
+        File.WriteAllText(customPath, "{\"Motion\": {\"TargetHost\": \"192.168.0.99\", \"Port\": 1234}}");
+        TabletApp.Gestures.MotionOptions custom = TabletApp.Gestures.MotionOptions.Load(customPath);
+        bool customOk = custom.TargetHost == "192.168.0.99" && custom.Port == 1234;
+        Environment.SetEnvironmentVariable("HEAD_SIM_HOST", "10.9.9.9");
+        Environment.SetEnvironmentVariable("HEAD_SIM_PORT", "4321");
+        bool envOk;
+        try
+        {
+            envOk = TabletApp.Gestures.HeadTcpClient.Host == "10.9.9.9"
+                && TabletApp.Gestures.HeadTcpClient.Port == 4321;
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("HEAD_SIM_HOST", null);
+            Environment.SetEnvironmentVariable("HEAD_SIM_PORT", null);
+        }
+        bool ok = defaultsOk && customOk && envOk;
+        log.Add($"MotionOptions: defauts={defaultsOk}, fichier={customOk}, env={envOk} -> {(ok ? "OK" : "KO")}");
+        return ok;
+    }
+
     private static bool CheckRobotSounds(List<string> log)
     {
         // Sons robot : palette rendue, inconnu nul, WAV valide, déterministe.
@@ -637,6 +666,7 @@ internal static class SelfTest
         {
             renderOk = renderOk && RobotSounds.Render(sys) is { Length: > 0 };
         }
+        renderOk = renderOk && RobotSounds.Render("prout") is { Length: > 0 };
         bool unknownOk = RobotSounds.Render("farfelu") is null;
         byte[]? giggle = RobotSounds.Render("giggle");
         byte[] wav = RobotSounds.ToWav(giggle!, 24000);
@@ -689,7 +719,7 @@ internal static class SelfTest
         string setup = LiveProtocol.BuildSetup("SYS", new[] { "happy", "sad" }, new[] { "giggle" }, new[] { "nod_yes" });
         bool setupOk = setup.Contains("models/gemini-3.8-live")
             && setup.Contains("generationConfig")
-            && setup.Contains("set_emotion") && setup.Contains("SYS") && setup.Contains("play_sound")
+            && setup.Contains("set_emotion") && setup.Contains("SYS") && setup.Contains("play_sound") && setup.Contains("play_fart")
             && setup.Contains("play_gesture") && setup.Contains("nod_yes")
             && setup.Contains("inputAudioTranscription");
         bool setupJsonOk;
@@ -721,11 +751,13 @@ internal static class SelfTest
             && greeting.Contains("\"turnComplete\":true") && greeting.Contains("Salut");
         DateTime now = new(2026, 1, 1, 12, 0, 10, DateTimeKind.Utc);
         TimeSpan silence = TimeSpan.FromMilliseconds(1200);
-        bool fireOk = LiveSession.ShouldSendTurnComplete(false, true, now.AddSeconds(-2), DateTime.MinValue, now, silence)
-            && !LiveSession.ShouldSendTurnComplete(false, false, now.AddSeconds(-2), DateTime.MinValue, now, silence)
-            && !LiveSession.ShouldSendTurnComplete(true, true, now.AddSeconds(-2), DateTime.MinValue, now, silence)
-            && !LiveSession.ShouldSendTurnComplete(false, true, now.AddSeconds(-2), now.AddSeconds(-1), now, silence)
-            && !LiveSession.ShouldSendTurnComplete(false, true, now.AddMilliseconds(-500), DateTime.MinValue, now, silence);
+        bool fireOk = LiveSession.ShouldSendTurnComplete(false, true, now.AddSeconds(-2), DateTime.MinValue, now, silence, 4, 4)
+            && !LiveSession.ShouldSendTurnComplete(false, false, now.AddSeconds(-2), DateTime.MinValue, now, silence, 4, 4)
+            && !LiveSession.ShouldSendTurnComplete(true, true, now.AddSeconds(-2), DateTime.MinValue, now, silence, 4, 4)
+            && !LiveSession.ShouldSendTurnComplete(false, true, now.AddSeconds(-2), now.AddSeconds(-1), now, silence, 4, 4)
+            && !LiveSession.ShouldSendTurnComplete(false, true, now.AddMilliseconds(-500), DateTime.MinValue, now, silence, 4, 4)
+
+            && !LiveSession.ShouldSendTurnComplete(false, true, now.AddSeconds(-2), DateTime.MinValue, now, silence, 3, 4);
         LiveServerUpdate done = LiveProtocol.ParseUpdate("{\"setupComplete\":{}}");
         LiveServerUpdate call = LiveProtocol.ParseUpdate(
             "{\"toolCall\":{\"functionCalls\":[{\"id\":\"c1\",\"name\":\"set_emotion\","
@@ -739,6 +771,8 @@ internal static class SelfTest
         LiveServerUpdate texts = LiveProtocol.ParseUpdate(
             "{\"serverContent\":{\"inputTranscription\":{\"text\":\"salut\"},"
             + "\"outputTranscription\":{\"text\":\"coucou\"},\"turnComplete\":true}}");
+        LiveServerUpdate fart = LiveProtocol.ParseUpdate(
+            "{\"toolCall\":{\"functionCalls\":[{\"id\":\"c7\",\"name\":\"play_fart\"}]}}");
         LiveServerUpdate sfx = LiveProtocol.ParseUpdate(
             "{\"toolCall\":{\"functionCalls\":[{\"id\":\"c9\",\"name\":\"play_sound\","
             + "\"args\":{\"sound\":\"giggle\"}}]}}");
@@ -750,7 +784,8 @@ internal static class SelfTest
             && call.ToolCalls.Count == 1 && call.ToolCalls[0] == new LiveToolCall("c1", "set_emotion", "happy", null, null)
             && strArgs.ToolCalls.Count == 1 && strArgs.ToolCalls[0].Emotion == "love"
             && sfx.ToolCalls.Count == 1 && sfx.ToolCalls[0].Sound == "giggle"
-            && wave.Audio is { Length: 2 } && wave.Audio[0] == 0x41
+
+            && fart.ToolCalls.Count == 1 && fart.ToolCalls[0].Name == "play_fart" && fart.ToolCalls[0].Sound is null            && wave.Audio is { Length: 2 } && wave.Audio[0] == 0x41
             && texts.InputTranscript == "salut" && texts.OutputTranscript == "coucou" && texts.TurnComplete
             && cut.Interrupted && !cut.TurnComplete
             && away.GoAway

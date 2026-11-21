@@ -7,13 +7,15 @@ namespace TabletApp.AI;
 /// déclenchement et score. Le mot-clé lui-même est fixé par keywords-patate.txt
 /// (phonèmes, voir docs du modèle). Valeurs par défaut si absent/invalide.
 /// </summary>
-internal sealed record WakeWordOptions(float Threshold, float Score)
+internal sealed record WakeWordOptions(float Threshold, float Score, double GateRms)
 {
     public static float DefaultThreshold => 0.25f;
 
     public static float DefaultScore => 1.0f;
 
-    public static WakeWordOptions Default { get; } = new(DefaultThreshold, DefaultScore);
+    public static double DefaultGateRms => 150.0;
+
+    public static WakeWordOptions Default { get; } = new(DefaultThreshold, DefaultScore, DefaultGateRms);
 
     public static WakeWordOptions Load(string? configPath = null)
     {
@@ -35,7 +37,10 @@ internal sealed record WakeWordOptions(float Threshold, float Score)
             float score = wake.TryGetProperty("Score", out JsonElement s)
                 && s.TryGetSingle(out float m) && m > 0
                 ? m : DefaultScore;
-            return new WakeWordOptions(threshold, score);
+            double gate = wake.TryGetProperty("GateRms", out JsonElement g)
+                && g.TryGetDouble(out double d) && d > 0
+                ? d : DefaultGateRms;
+            return new WakeWordOptions(threshold, score, gate);
         }
         catch
         {

@@ -20,11 +20,11 @@ var _track_active := false
 var _cam_yaw := deg_to_rad(45.0)
 var _cam_pitch := deg_to_rad(12.0)
 var _cam_dist := 0.8
-const CAM_TARGET := Vector3(0, 0.42, 0)
+const CAM_TARGET := Vector3(0, 0.15, 0.0)
 
-@onready var _pan_pivot: Node3D = $PanPivot
-@onready var _tilt_pivot: Node3D = $PanPivot/TiltPivot
-@onready var _roll_pivot: Node3D = $PanPivot/TiltPivot/RollPivot
+@onready var _pan_pivot: Node3D = $Head/PanPivot
+@onready var _tilt_pivot: Node3D = $Head/PanPivot/TiltPivot
+@onready var _roll_pivot: Node3D = $Head/PanPivot/TiltPivot/RollPivot
 @onready var _camera: Camera3D = $Camera3D
 
 
@@ -117,6 +117,8 @@ func _handle_line(line: String) -> void:
 	for axis in ["yaw", "pitch", "roll"]:
 		if msg.has(axis):
 			var v := clampf(float(msg[axis]), LIMITS[axis][0], LIMITS[axis][1])
+			if axis == "roll":
+				v = 0.0  # BOM-budget 2 axes : roll ignore, protocole inchange.
 			_target[axis] = v
 			applied[axis] = v
 	if not applied.is_empty():
@@ -152,7 +154,9 @@ func _load_track(raw: Variant) -> bool:
 		last_t = t
 		var pose := {}
 		for axis in ["yaw", "pitch", "roll"]:
-			if (k as Dictionary).has(axis):
+			if axis == "roll":
+				pose[axis] = 0.0  # BOM-budget 2 axes.
+			elif (k as Dictionary).has(axis):
 				pose[axis] = clampf(float((k as Dictionary)[axis]), LIMITS[axis][0], LIMITS[axis][1])
 			else:
 				pose[axis] = float(_target[axis])
@@ -193,8 +197,10 @@ func _apply_pose() -> void:
 	if not is_node_ready():
 		return
 	_pan_pivot.rotation.y = deg_to_rad(float(_current["yaw"]))
-	_tilt_pivot.rotation.x = deg_to_rad(-float(_current["pitch"]))
-	_roll_pivot.rotation.z = deg_to_rad(float(_current["roll"]))
+	# Ecran face -Z (modele kit reel) : pitch>0 = lever la tete = rotation.x positive.
+	_tilt_pivot.rotation.x = deg_to_rad(float(_current["pitch"]))
+	# BOM-budget 2 axes : pas de roll, pivot vide conserve pour compat protocole.
+	_roll_pivot.rotation.z = 0.0
 
 
 func _send(payload: Dictionary) -> void:

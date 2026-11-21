@@ -8,7 +8,8 @@ namespace TabletApp.Tests.Steps;
 [Binding]
 public sealed class ConversationSteps
 {
-    private readonly List<(string? Heard, string? Reply, string? Emotion)> _script = new();
+    private readonly List<(string? Heard, string? Reply, string? Emotion, string? Sound)> _script = new();
+    private readonly List<string> _sounds = new();
     private readonly List<string> _spoken = new();
     private readonly List<RobotExpression> _faces = new();
     private readonly List<int> _historySizes = new();
@@ -21,8 +22,8 @@ public sealed class ConversationSteps
             _script.Add((
                 EmptyToNull(row["entendu"]),
                 EmptyToNull(row["réplique"]),
-                EmptyToNull(row["émotion"])));
-        }
+                EmptyToNull(row["émotion"]),
+                row.TryGetValue("son", out string? son) ? EmptyToNull(son) : null));        }
     }
 
     [When("la discussion se déroule")]
@@ -31,14 +32,14 @@ public sealed class ConversationSteps
         var heard = new Queue<string?>(_script.Select(s => s.Heard));
         var map = _script
             .Where(s => s.Heard is not null)
-            .ToDictionary(s => s.Heard!, s => (s.Reply, s.Emotion));
+            .ToDictionary(s => s.Heard!, s => (s.Reply, s.Emotion, s.Sound));
         var chat = new Conversation(
             (_, _) => Task.FromResult(heard.Count > 0 ? heard.Dequeue() : null),
             (history, h, _) =>
             {
                 _historySizes.Add(history.Count);
-                var (reply, emotion) = map[h];
-                return Task.FromResult((reply, emotion));
+                var (reply, emotion, sound) = map[h];
+                return Task.FromResult((reply, emotion, sound));
             },
             (text, _) =>
             {
@@ -46,7 +47,12 @@ public sealed class ConversationSteps
                 return Task.CompletedTask;
             },
             expr => _faces.Add(expr),
-            listenFor: TimeSpan.FromMilliseconds(20));
+            listenFor: TimeSpan.FromMilliseconds(20),
+            playSound: (sound, _) =>
+            {
+                _sounds.Add(sound);
+                return Task.CompletedTask;
+            });
         await chat.RunAsync(RobotExpression.Neutral, CancellationToken.None);
     }
 
@@ -77,6 +83,15 @@ public sealed class ConversationSteps
         expected.Add(RobotExpression.Neutral);
         Assert.Equal(expected, _faces);
         Assert.Equal(Enumerable.Range(0, expected.Count - 1), _historySizes);
+    }
+
+    [Then("les sons suivent le script")]
+    public void ThenSons()
+    {
+        var expected = _script
+            .Where(s => s.Heard is not null && s.Sound is not null)
+            .Select(s => s.Sound!);
+        Assert.Equal(expected, _sounds);
     }
 
     private static string? EmptyToNull(string value) =>

@@ -17,14 +17,15 @@ Fonctionnalité: Test voix
 
   Scénario: Discussion avec émotions puis adieux sur silences
     Soit une discussion avec :
-      | entendu            | réplique | émotion |
-      | Bonjour            | Salut !  | happy   |
-      | Raconte une blague | Toto !   | laugh   |
-      |                    |          |         |
-      |                    |          |         |
+      | entendu            | réplique | émotion | son    |
+      | Bonjour            | Salut !  | happy   |        |
+      | Raconte une blague | Toto !   | laugh   | giggle |
+      |                    |          |         |        |
+      |                    |          |         |        |
     Quand la discussion se déroule
     Alors le robot salue, répond et dit au revoir
     Et les visages suivent le script
+    Et les sons suivent le script
 
   Scénario: Émotion inconnue ignorée en discussion
     Soit une discussion avec :

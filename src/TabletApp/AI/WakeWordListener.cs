@@ -11,6 +11,9 @@ internal interface IWakeDetector : IDisposable
     void Reset();
 }
 
+/// <summary>État d'un tampon micro pour le diagnostic (sonde --wake-probe).</summary>
+internal sealed record WakeTick(double Rms, bool GateOpen, bool Feeding, bool FeedingStarted, bool FeedingStopped, bool Detected);
+
 /// <summary>
 /// Détecteur sherpa-onnx (zipformer KWS zh-en, words "HEY_PATATE_*").
 /// Le stream est réinitialisé après chaque détection.
@@ -40,7 +43,7 @@ internal sealed class SherpaWakeDetector : IWakeDetector
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "TabletApp", "models", "sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20");
 
-    private static string ResolveModelDir()
+    internal static string ResolveModelDir()
     {
         string local = OverrideModelDir();
         if (File.Exists(Path.Combine(local, EncoderFile))
@@ -136,7 +139,7 @@ internal sealed class WakeWordListener : IDisposable
     private static readonly TimeSpan Cooldown = TimeSpan.FromSeconds(3);
 
     // Seuil d'alimentation (150/32768, bien au-dessus du plancher ~0,0002).
-    private const double GateLevel = 150.0 / 32768.0;
+    private readonly double _gate;
     private const int PreRollBuffers = 3;
 
     private readonly IWakeDetector _detector;
@@ -152,11 +155,14 @@ internal sealed class WakeWordListener : IDisposable
 
     public event Action? Detected;
 
+    public event Action<WakeTick>? Tick;
+    internal double GateRms => _gate * 32768.0;
     public WakeWordListener(
-        IWakeDetector detector, int deviceNumber = 0, TimeSpan? quietHangover = null)
+        IWakeDetector detector, int deviceNumber = 0, TimeSpan? quietHangover = null, double gateRms = 150.0)
     {
         _detector = detector;
-        _device = deviceNumber;
+
+        _gate = gateRms / 32768.0;        _device = deviceNumber;
         _quietHangover = quietHangover ?? TimeSpan.FromSeconds(2);
     }
 
@@ -203,15 +209,20 @@ internal sealed class WakeWordListener : IDisposable
         }
         double rms = samples.Length == 0 ? 0 : Math.Sqrt(sum / samples.Length);
         bool fire = false;
-        lock (_sync)
+
+        bool started = false;
+        bool stopped = false;
+        bool gateOpen = rms >= _gate;
+        bool feedingAfter = false;        lock (_sync)
         {
-            if (rms >= GateLevel)
+            if (gateOpen)
             {
                 _quietSince = null;
                 if (!_feeding)
                 {
                     _feeding = true;
-                    foreach (float[] old in _preRoll)
+
+                    started = true;                    foreach (float[] old in _preRoll)
                     {
                         _detector.Feed(old);
                     }
@@ -224,7 +235,8 @@ internal sealed class WakeWordListener : IDisposable
                 if (_feeding && DateTime.UtcNow - _quietSince > _quietHangover)
                 {
                     _feeding = false;
-                    _preRoll.Clear();
+
+                    stopped = true;                    _preRoll.Clear();
                     _detector.Reset();
                 }
                 else if (!_feeding)
@@ -241,11 +253,16 @@ internal sealed class WakeWordListener : IDisposable
                 _lastFire = DateTime.UtcNow;
                 fire = true;
             }
+        feedingAfter = _feeding;
         }
         if (fire)
         {
             Detected?.Invoke();
-        }
+
+        if (Tick is not null)
+        {
+            Tick(new WakeTick(rms, gateOpen, feedingAfter, started, stopped, fire));
+        }        }
     }
 
     public void Dispose()

@@ -53,6 +53,22 @@ public sealed class LiveSteps
             """{"toolCall":{"functionCalls":[{"id":"c9","name":"play_sound","args":{"sound":"giggle"}}]}}""");
     }
 
+    [Given("un serveur live qui fait un prout puis parle")]
+    public void GivenProut()
+    {
+        _socket.Script(
+            """{"setupComplete":{}}""",
+            """{"toolCall":{"functionCalls":[{"id":"c7","name":"play_fart"}]}}""",
+            """{"serverContent":{"modelTurn":{"parts":[{"inlineData":{"mimeType":"audio/pcm;rate=24000","data":"QUI="}}]}}}""",
+            """{"serverContent":{"turnComplete":true}}""");
+    }
+
+    [Given("un serveur live silencieux")]
+    public void GivenSilencieux()
+    {
+        _socket.Script("""{"setupComplete":{}}""");
+    }
+
     [Given("un serveur live injoignable")]
     public void GivenInjoignable() => _socket.FailConnect = true;
 
@@ -92,7 +108,8 @@ public sealed class LiveSteps
         {
             // Parole forte d'abord (le robot a fini : sourdine levée),
             // puis silence pour déclencher la fin de phrase côté client.
-            _mic.Push(pushes < 10 ? loud : silence);
+            // 14 envois : 6 passent la queue, seuil parole (4) atteint.
+            _mic.Push(pushes < 14 ? loud : silence);
             pushes++;
             if (_cancelAfterInterrupt && _player.Clears > 0)
             {
@@ -164,6 +181,59 @@ public sealed class LiveSteps
         Assert.Contains(_socket.Sent, json => json.Contains("\"c9\""));
     }
 
+    [When("le micro capte un bruit bref puis le silence")]
+    public async Task WhenBruitBref()
+    {
+        using var cts = new CancellationTokenSource();
+        var session = new LiveSession(
+            "cle-fausse", "SYS", new[] { "happy" }, new[] { "giggle" }, new[] { "nod_yes" },
+            _socket, _mic, _player,
+            new LiveCallbacks(
+                OnEmotion: emotion => _emotions.Add(emotion),
+                OnSound: sound => _sounds.Add(sound),
+                OnHeardTranscript: text => _heard.Add(text),
+                OnRobotTranscript: text => _said.Add(text),
+                OnSpeaking: speaking => _speaking.Add(speaking),
+                OnGlow: _ => { },
+                OnGesture: _ => { },
+                OnUserSpeech: () => { },
+                OnLog: _ => { }),
+            idleTimeout: TimeSpan.FromSeconds(30),
+            turnTimeout: TimeSpan.FromMilliseconds(150));
+        Task run = session.RunAsync(cts.Token);
+        byte[] loud = LoudChunk();
+        _mic.Push(loud);
+        _mic.Push(loud);
+        for (int i = 0; i < 10; i++)
+        {
+            _mic.Push(new byte[320]);
+            await Task.Delay(50);
+        }
+        cts.Cancel();
+        await run;
+    }
+
+    [Then("le prout est joué et la voix du robot est coupée")]
+    public void ThenProut()
+    {
+        Assert.Equal(new[] { "prout" }, _sounds.ToArray());
+        Assert.Empty(_player.Played);
+        Assert.Contains(_socket.Sent, json => json.Contains("\"c7\""));
+    }
+
+    [Then("aucune fin de phrase n'est envoyée pour un bruit")]
+    public void ThenPasDeTour()
+    {
+        Assert.DoesNotContain(_socket.Sent, IsBareTurnComplete);
+    }
+
+    [Then("le silence prolongé n'est pas streamé")]
+    public void ThenSilenceCoupe()
+    {
+        long audioSent = _socket.Sent.Count(json => json.Contains("realtimeInput"));
+        Assert.InRange(audioSent, 2, 11);
+    }
+
     [Then("rien n'est envoyé")]
     public void ThenRien()
     {
@@ -216,7 +286,10 @@ public sealed class LiveSteps
         }
         _sentAfterSilence = _socket.Sent.Skip(mark).ToList();
         mark = _socket.Sent.Count;
-        _mic.Push(loud);
+        for (int i = 0; i < 5; i++)
+        {
+            _mic.Push(loud);
+        }
         DateTime end = DateTime.UtcNow.AddSeconds(5);
         while (!run.IsCompleted && DateTime.UtcNow < end
             && !_socket.Sent.Skip(mark).Any(IsBareTurnComplete))

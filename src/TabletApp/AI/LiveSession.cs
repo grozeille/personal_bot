@@ -73,6 +73,9 @@ internal sealed class LiveSession
     private bool _heardSpeech;
     private volatile bool _speaking;
     private DateTime _speakEndedAt = DateTime.MinValue;
+    private volatile bool _mutedTurn;
+    private int _speechChunks;
+    private readonly Queue<byte[]> _preRoll = new();
     private CancellationTokenSource? _stop;
 
     public LiveSession(
@@ -208,7 +211,7 @@ internal sealed class LiveSession
                 {
                     _lastModelActivity = DateTime.UtcNow;
                     _turnCompleteSent = false;
-                    lag = (DateTime.UtcNow - _lastSpeech).TotalSeconds;
+                    _speechChunks = 0;                    lag = (DateTime.UtcNow - _lastSpeech).TotalSeconds;
                 }
                 if (!_speaking)
                 {
@@ -217,7 +220,10 @@ internal sealed class LiveSession
                     _events.OnGlow(TabletApp.UI.VoiceGlow.Thinking);
                     _events.OnLog($"Live : réponse vocale après {lag:F1} s.");
                 }
-                _player.PlayChunk(pcm);
+                if (!_mutedTurn)
+                {
+                    _player.PlayChunk(pcm);
+                }
             }
             if (update.InputTranscript is { } heard)
             {
@@ -229,8 +235,11 @@ internal sealed class LiveSession
                 {
                     _lastModelActivity = DateTime.UtcNow;
                     _turnCompleteSent = false;
+                    _speechChunks = 0;                }
+                if (!_mutedTurn)
+                {
+                    robotText.Append(said);
                 }
-                robotText.Append(said);
             }
             if (update.ToolCalls.Count > 0)
             {
@@ -238,7 +247,7 @@ internal sealed class LiveSession
                 {
                     _lastModelActivity = DateTime.UtcNow;
                     _turnCompleteSent = false;
-                }
+                    _speechChunks = 0;                }
             }
             foreach (LiveToolCall call in update.ToolCalls)
             {
@@ -249,6 +258,11 @@ internal sealed class LiveSession
                 if (call.Name == "play_sound" && call.Sound is { } sfx)
                 {
                     _events.OnSound(sfx);
+                }
+                if (call.Name == "play_fart")
+                {
+                    _events.OnSound("prout");
+                    _mutedTurn = true;
                 }
                 if (call.Name == "play_gesture" && call.Gesture is { } g)
                 {
@@ -268,7 +282,7 @@ internal sealed class LiveSession
                 lock (_sync)
                 {
                     _speakEndedAt = DateTime.UtcNow;
-                }
+                    _mutedTurn = false;                }
                 _speaking = false;
                 _events.OnSpeaking(false);
                 _events.OnGlow(TabletApp.UI.VoiceGlow.Listening);
@@ -279,7 +293,7 @@ internal sealed class LiveSession
                 lock (_sync)
                 {
                     _speakEndedAt = DateTime.UtcNow;
-                }
+                    _mutedTurn = false;                }
                 _speaking = false;
                 _events.OnSpeaking(false);
                 _events.OnGlow(TabletApp.UI.VoiceGlow.Listening);
@@ -305,6 +319,8 @@ internal sealed class LiveSession
     // Semi-duplex strict : le micro est sourd pendant la parole du robot,
     // plus une queue couvrant la fin du buffer audio (pas d'auto-écoute).
     internal static readonly TimeSpan SpeakMuteTail = TimeSpan.FromMilliseconds(400);
+    internal const int MinSpeechChunks = 4;
+    internal static readonly TimeSpan SendHangover = TimeSpan.FromMilliseconds(300);
 
     internal static bool ShouldMuteMic(bool speaking, DateTime speakEndedAt, DateTime now, TimeSpan tail)
     {
@@ -313,52 +329,71 @@ internal sealed class LiveSession
 
     internal static bool ShouldSendTurnComplete(
         bool sent, bool heardSpeech, DateTime lastSpeech, DateTime lastModel,
-        DateTime now, TimeSpan silence)
+        DateTime now, TimeSpan silence, int speechChunks, int minSpeechChunks)
     {
-        return !sent && heardSpeech && lastSpeech > lastModel && now - lastSpeech >= silence;
+        return !sent && heardSpeech && lastSpeech > lastModel && now - lastSpeech >= silence
+            && speechChunks >= minSpeechChunks;
     }
 
     private void OnMicChunk(byte[] pcm16k)
     {
         double rms = NAudioVoice.ComputeRms(pcm16k, pcm16k.Length);
-        bool send = true;
+        List<byte[]> toSend = new();
         bool endTurn = false;
         bool endSession = false;
         lock (_sync)
         {
             DateTime now = DateTime.UtcNow;
             bool muted = ShouldMuteMic(_speaking, _speakEndedAt, now, SpeakMuteTail);
-            if (!muted && rms >= NAudioVoice.SpeechRmsThreshold)
+            bool speech = !muted && rms >= NAudioVoice.SpeechRmsThreshold;
+            if (speech)
             {
                 _lastSpeech = now;
                 _heardSpeech = true;
+                _speechChunks++;
                 if (!_wasSpeech)
                 {
                     _wasSpeech = true;
                     _events.OnUserSpeech();
+                    while (_preRoll.Count > 0)
+                    {
+                        toSend.Add(_preRoll.Dequeue());
+                    }
                 }
+                toSend.Add(pcm16k);
             }
             else
             {
                 _wasSpeech = false;
+                if (!muted)
+                {
+                    _preRoll.Enqueue(pcm16k);
+                    while (_preRoll.Count > 2)
+                    {
+                        _preRoll.Dequeue();
+                    }
+                    if (now - _lastSpeech < SendHangover)
+                    {
+                        toSend.Add(pcm16k);
+                    }
+                }
             }
-            // Semi-duplex strict : sourd pendant la parole du robot (+ queue).
-            send = !muted;
             if (!muted && now - _lastSpeech > _idleTimeout)
             {
                 endSession = true;
             }
             else if (!muted && ShouldSendTurnComplete(
                 _turnCompleteSent, _heardSpeech, _lastSpeech, _lastModelActivity,
-                now, _turnTimeout))
+                now, _turnTimeout, _speechChunks, MinSpeechChunks))
             {
                 _turnCompleteSent = true;
+                _speechChunks = 0;
                 endTurn = true;
             }
         }
-        if (send)
+        foreach (byte[] chunk in toSend)
         {
-            _ = SendAsync(LiveProtocol.BuildAudioChunk(pcm16k));
+            _ = SendAsync(LiveProtocol.BuildAudioChunk(chunk));
         }
         if (endTurn)
         {

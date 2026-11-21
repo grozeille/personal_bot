@@ -31,7 +31,7 @@ Schéma d'assemblage (tablette + Pan/Tilt/Roll + PCA9685 + Pi + alim 5V + base b
   - *Wake Word local :* **Sherpa-ONNX** (`win-x86`, 100 % hors-ligne, 0 $ au repos).
   - *Vision locale :* **OpenCvSharp4** (`win-x86`) + API WinRT `MediaCapture`.
   - *IA & Function Calling :* WebSocket natif (`ClientWebSocket`) vers **Gemini Multimodal Live API**.
-- **Serveur Moteurs (Pi 1) :** Python 3 (`FastAPI` ou `websockets` + `adafruit-circuitpython-servokit`) exposant une API locale sur le réseau Wi-Fi.
+- **Serveur Moteurs (Pi 1) :** Go (binaire statique cross-compilé, contrat TCP `src/Simulator3D/PROTOCOL.md`, PCA9685 en direct) sur le réseau local (Ethernet).
 
 ## 3. Feuille de Route par Étapes
 
@@ -115,13 +115,13 @@ Référence visuelle (2 rangées de 5, couleur `#79D7E3`) : [docs/reference-face
 
 #### Choix de l'outil 3D : **Godot Engine 4** (recommandé)
 
-- *Pourquoi Godot plutôt que Blender pour ce cas d'usage :* Godot est léger, démarre instantanément sur votre PC fixe, intègre un serveur **UDP / WebSocket natif** en quelques lignes de GDScript, et permet de tester en temps réel les ordres envoyés par l'application C# de la tablette (avec contrôle de collisions et limites angulaires).
+- *Pourquoi Godot plutôt que Blender pour ce cas d'usage :* Godot est léger, démarre instantanément sur votre PC fixe, intègre un serveur **TCP** (Godot 4 n'a pas de serveur WebSocket) en quelques lignes de GDScript, et permet de tester en temps réel les ordres envoyés par l'application C# de la tablette (avec contrôle de collisions et limites angulaires).
 
 #### Fonctionnalités
 
 1. **Jumeau numérique 3D (Godot 4) :**
    - Modélisation simplifiée du socle, des 3 pivots (`Pan` -> `Tilt` -> `Roll`) et de la tablette 8 pouces à l'échelle réelle (216 × 130 mm).
-   - Réception en temps réel des trames JSON envoyées par l'app C# sur le réseau local (`UDP` à 30 Hz pour le suivi continu + `WebSocket/HTTP` pour les gestes).
+   - Réception en temps réel des trames JSON envoyées par l'app C# sur le réseau local (contrat TCP unique, voir `src/Simulator3D/PROTOCOL.md` ; connexion persistante pour le suivi à 30 Hz).
 2. **Moteur de cinématique & gestuelle (C# + Python Pi) :**
    - Architecture en **3 couches superposées** (inspirée de *Reachy Mini*) :
      1. *Couche Base (Suivi) :* Orientation `(Pan, Tilt)` vers le visage détecté à l'Étape 2.
@@ -149,7 +149,7 @@ Référence visuelle (2 rangées de 5, couleur `#79D7E3`) : [docs/reference-face
    - Assemblage des équerres aluminium **Tilt** et **Roll** + pince universelle pour la Dell Venue 8 Pro.
    - Gestion des câbles (passage souple avec mou suffisant pour autoriser ±60° en Pan et ±25° en Tilt/Roll).
 3. **Tests en conditions réelles :**
-   - Bascule de l'adresse IP cible dans le fichier `appsettings.json` de l'app C# (IP du simulateur Godot -> `raspberrypi.local`).
+   - Bascule simu -> Pi via `HEAD_SIM_HOST`/`HEAD_SIM_PORT` (`127.0.0.1:9080` = simu Godot, IP du Pi ensuite).
    - Validation de la stabilité électrique (aucun redémarrage du Pi lors de mouvements combinés sur les 3 axes).
    - Test grandeur nature avec votre fille !
 
@@ -173,15 +173,15 @@ robot-companion/
 │   │   ├── Vision/
 │   │   │   └── FaceTracker.cs         # Suivi facial OpenCvSharp + capture photo
 │   │   └── Motion/
-│   │       └── MotionEngine.cs        # Cinématique 3 couches + client UDP/HTTP
-│   ├── PiServoServer/                 # Serveur Python pour Raspberry Pi 1
-│   │   ├── server.py                  # Réception UDP/HTTP + lissage PCA9685
+│   │       └── MotionEngine.cs        # Cinématique 3 couches + client TCP
+│   ├── PiServoServer/                 # Serveur Go pour Raspberry Pi 1 (binaire statique)
+│   │   ├── server.go                  # Contrat TCP + lissage PCA9685
 │   │   ├── calibration.json           # Angles neutres et limites min/max
-│   │   └── requirements.txt
+│   │   └── go.mod
 │   └── Simulator3D/                   # Projet Godot 4 (Jumeau numérique 3-DOF)
 │       ├── project.godot
 │       ├── Main.tscn
-│       └── RobotArm3DOF.gd            # Récepteur UDP et animation des 3 axes
+│       └── RobotArm3DOF.gd            # Serveur TCP et animation des 3 axes
 └── .github/
     └── workflows/
         └── build-tablet-x86.yml       # Compilation automatique .exe win-x86

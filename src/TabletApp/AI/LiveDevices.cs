@@ -161,6 +161,7 @@ internal sealed class LiveMic : ILiveMic
 internal sealed class LivePlayer : ILivePlayer
 {
     private readonly WaveOutEvent _output = new() { DesiredLatency = 150 };
+    private readonly RobotVoiceFilter _robot = new();
     private readonly BufferedWaveProvider _buffer;
     private bool _disposed;
 
@@ -173,7 +174,14 @@ internal sealed class LivePlayer : ILivePlayer
         _output.Init(_buffer);
     }
 
-    public void PlayChunk(byte[] pcm24k) => _buffer.AddSamples(pcm24k, 0, pcm24k.Length);
+    public void PlayChunk(byte[] pcm24k)
+    {
+        if (RobotVoiceFilter.Enabled)
+        {
+            _robot.Apply(pcm24k, 0, pcm24k.Length, 24000);
+        }
+        _buffer.AddSamples(pcm24k, 0, pcm24k.Length);
+    }
 
     public void Clear() => _buffer.ClearBuffer();
 

@@ -27,3 +27,19 @@ Fonctionnalité: Session Live
     Soit un serveur live injoignable
     Quand la session live démarre
     Alors rien n'est envoyé
+
+  Scénario: Le robot joue un son sur demande outil
+    Soit un serveur live qui joue un son
+    Quand la session live se déroule
+    Alors le son giggle est joué et le tool est acquitté
+
+  Scénario: Prout demandé joue un son au lieu de la voix
+    Soit un serveur live qui fait un prout puis parle
+    Quand la session live se déroule
+    Alors le prout est joué et la voix du robot est coupée
+
+  Scénario: Bruit bref et silence ignorés
+    Soit un serveur live silencieux
+    Quand le micro capte un bruit bref puis le silence
+    Alors aucune fin de phrase n'est envoyée pour un bruit
+    Et le silence prolongé n'est pas streamé

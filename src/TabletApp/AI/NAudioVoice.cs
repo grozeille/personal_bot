@@ -83,14 +83,20 @@ internal static class NAudioVoice
     }
 
     /// <summary>Joue des octets WAV jusqu'au bout (ou annulation).</summary>
-    public static async Task PlayAsync(byte[] wav, CancellationToken ct)
+    public static async Task PlayAsync(byte[] wav, CancellationToken ct, bool raw = false)
     {
         using var stream = new MemoryStream(wav, writable: false);
         using var reader = new WaveFileReader(stream);
         using var output = new WaveOutEvent();
         var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         output.PlaybackStopped += (_, _) => done.TrySetResult();
-        output.Init(reader);
+        WaveStream source = reader;
+        if (!raw && RobotVoiceFilter.Enabled && reader.WaveFormat.Encoding == WaveFormatEncoding.Pcm
+            && reader.WaveFormat.BitsPerSample == 16 && reader.WaveFormat.Channels == 1)
+        {
+            source = new RobotVoiceStream(reader, new RobotVoiceFilter());
+        }
+        output.Init(source);
         output.Play();
         using var registration = ct.Register(() => output.Stop());
         await done.Task.ConfigureAwait(false);

@@ -111,6 +111,12 @@ internal static class LiveProtocol
                                     required = new[] { "sound" },
                                 },
                                 behavior = "NON_BLOCKING",
+                            },
+                            new
+                            {
+                                name = "play_fart",
+                                description = "Joue un prout, sans parler.",
+                                behavior = "NON_BLOCKING",
                             }
                         },
                     },

@@ -1,6 +1,6 @@
-# Rapport de tests BDD — 2026-11-19 22:46
+# Rapport de tests BDD — 2026-11-21 15:30
 
-*36 scénarios : 36 OK, 0 KO.*
+*39 scénarios : 39 OK, 0 KO.*
 
 ## Clignement des yeux — Clignement régulier sur 30 secondes — OK
 
@@ -94,11 +94,17 @@
 
 ![Saccades régulières sur 30 secondes](Regard_de_surveillance_Saccades_régulières_sur_30_secondes_1.png)
 
+## Session Live — Bruit bref et silence ignorés — OK
+
 ## Session Live — Connexion live impossible — OK
 
 ## Session Live — Interruption vide le haut-parleur — OK
 
+## Session Live — Le robot joue un son sur demande outil — OK
+
 ## Session Live — Le robot sourd pendant sa propre parole — OK
+
+## Session Live — Prout demandé joue un son au lieu de la voix — OK
 
 ## Session Live — Session live complète avec émotion — OK
 

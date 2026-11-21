@@ -40,8 +40,19 @@ internal sealed class HeadTcpClient(string host, int port)
     }
 
     public static string Host =>
-        Environment.GetEnvironmentVariable("HEAD_SIM_HOST") ?? "127.0.0.1";
+        ResolveHost();
 
     public static int Port =>
-        int.TryParse(Environment.GetEnvironmentVariable("HEAD_SIM_PORT"), out int p) ? p : 9080;
+        ResolvePort();
+
+    private static string ResolveHost()
+    {
+        string? env = Environment.GetEnvironmentVariable("HEAD_SIM_HOST");
+        return string.IsNullOrEmpty(env) ? MotionOptions.Load().TargetHost : env;
+    }
+
+    private static int ResolvePort() =>
+        int.TryParse(Environment.GetEnvironmentVariable("HEAD_SIM_PORT"), out int port)
+            ? port
+            : MotionOptions.Load().Port;
 }
