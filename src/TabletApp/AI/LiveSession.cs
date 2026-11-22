@@ -75,7 +75,8 @@ internal sealed class LiveSession
     private DateTime _speakEndedAt = DateTime.MinValue;
     private volatile bool _mutedTurn;
     private int _speechChunks;
-    private readonly Queue<byte[]> _preRoll = new();
+    private int _turnAudioChunks;
+    private double _turnPeakRms;
     private CancellationTokenSource? _stop;
 
     public LiveSession(
@@ -249,8 +250,14 @@ internal sealed class LiveSession
                     _turnCompleteSent = false;
                     _speechChunks = 0;                }
             }
+            bool endByTool = false;
             foreach (LiveToolCall call in update.ToolCalls)
             {
+                if (call.Name == "end_conversation")
+                {
+                    _events.OnLog("Live : fin de discussion demandée.");
+                    endByTool = true;
+                }
                 if (call.Name == "set_emotion" && call.Emotion is { } feeling)
                 {
                     _events.OnEmotion(feeling);
@@ -271,6 +278,11 @@ internal sealed class LiveSession
                 await _socket.SendAsync(
                     LiveProtocol.BuildToolResponse(new[] { (call.Id, call.Name) }),
                     stop.Token).ConfigureAwait(false);
+            }
+            if (endByTool)
+            {
+                // Après l'acquittement : le "Bye !" déjà en file se joue.
+                RequestStop();
             }
             if (update.CancelledIds.Count > 0)
             {
@@ -320,7 +332,6 @@ internal sealed class LiveSession
     // plus une queue couvrant la fin du buffer audio (pas d'auto-écoute).
     internal static readonly TimeSpan SpeakMuteTail = TimeSpan.FromMilliseconds(400);
     internal const int MinSpeechChunks = 4;
-    internal static readonly TimeSpan SendHangover = TimeSpan.FromMilliseconds(300);
 
     internal static bool ShouldMuteMic(bool speaking, DateTime speakEndedAt, DateTime now, TimeSpan tail)
     {
@@ -335,6 +346,31 @@ internal sealed class LiveSession
             && speechChunks >= minSpeechChunks;
     }
 
+    /// <summary>Couture de diagnostic : injecte un chunk micro (outil --live-sim).</summary>
+    internal void FeedTestChunk(byte[] pcm16k) => OnMicChunk(pcm16k);
+
+    /// <summary>Couture de diagnostic : simule une réponse modèle (réarme les tours).</summary>
+    internal void SimulateModelActivity()
+    {
+        lock (_sync)
+        {
+            _lastModelActivity = DateTime.UtcNow;
+            _turnCompleteSent = false;
+            _speechChunks = 0;
+        }
+    }
+
+    /// <summary>Compteur d'audio envoyé pour le diagnostic par tour (sous verrou).</summary>
+    private void NoteSent(byte[] chunk, double? rms = null)
+    {
+        _turnAudioChunks++;
+        double level = rms ?? NAudioVoice.ComputeRms(chunk, chunk.Length);
+        if (level > _turnPeakRms)
+        {
+            _turnPeakRms = level;
+        }
+    }
+
     private void OnMicChunk(byte[] pcm16k)
     {
         double rms = NAudioVoice.ComputeRms(pcm16k, pcm16k.Length);
@@ -346,37 +382,33 @@ internal sealed class LiveSession
             DateTime now = DateTime.UtcNow;
             bool muted = ShouldMuteMic(_speaking, _speakEndedAt, now, SpeakMuteTail);
             bool speech = !muted && rms >= NAudioVoice.SpeechRmsThreshold;
-            if (speech)
+            // Flux continu exigé par le serveur : ne jamais affamer le stream
+            // (sinon les tours suivant le premier reviennent vides). Sourdine
+            // = silence numérique (pas d'écho), jamais un trou.
+            if (muted)
             {
-                _lastSpeech = now;
-                _heardSpeech = true;
-                _speechChunks++;
-                if (!_wasSpeech)
-                {
-                    _wasSpeech = true;
-                    _events.OnUserSpeech();
-                    while (_preRoll.Count > 0)
-                    {
-                        toSend.Add(_preRoll.Dequeue());
-                    }
-                }
-                toSend.Add(pcm16k);
+                _wasSpeech = false;
+                toSend.Add(new byte[pcm16k.Length]);
             }
             else
             {
-                _wasSpeech = false;
-                if (!muted)
+                if (speech)
                 {
-                    _preRoll.Enqueue(pcm16k);
-                    while (_preRoll.Count > 2)
+                    _lastSpeech = now;
+                    _heardSpeech = true;
+                    _speechChunks++;
+                    if (!_wasSpeech)
                     {
-                        _preRoll.Dequeue();
-                    }
-                    if (now - _lastSpeech < SendHangover)
-                    {
-                        toSend.Add(pcm16k);
+                        _wasSpeech = true;
+                        _events.OnUserSpeech();
                     }
                 }
+                else
+                {
+                    _wasSpeech = false;
+                }
+                toSend.Add(pcm16k);
+                NoteSent(pcm16k, rms);
             }
             if (!muted && now - _lastSpeech > _idleTimeout)
             {
@@ -398,6 +430,9 @@ internal sealed class LiveSession
         if (endTurn)
         {
             _events.OnLog("Live : fin de phrase détectée (client).");
+            _events.OnLog($"Live : tour envoyé : {_turnAudioChunks} chunks, RMS max {_turnPeakRms:F0}.");
+            _turnAudioChunks = 0;
+            _turnPeakRms = 0;
             _ = SendAsync(LiveProtocol.BuildTurnComplete());
         }
         if (endSession)

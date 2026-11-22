@@ -38,6 +38,9 @@ internal sealed class RobotFaceRenderer : UserControl
     /// <summary>Maj disponible : affiche l'icône en haut à droite.</summary>
     public bool UpdateAvailable { get; set; }
 
+    /// <summary>Maj en cours : points animés à la place du visage. Mis par MainForm.</summary>
+    public bool BusyDots { get; set; }
+
     /// <summary>Parole en cours : bouche grande ouverte (rire). Mis par MainForm.</summary>
     public bool Speaking { get; set; }
 
@@ -221,7 +224,7 @@ internal sealed class RobotFaceRenderer : UserControl
             open, gazeX, gazeY, _sleep.Yawn, now.TotalSeconds,
             _expression.Current, _expression.Previous, _expression.Progress,
             mouthOverride, _sleep.IsAwake,
-            updateAvailable: UpdateAvailable, glow: Glow);
+            updateAvailable: UpdateAvailable, glow: Glow, busyDots: BusyDots);
     }
 
     private static float SpeakEase(double t)

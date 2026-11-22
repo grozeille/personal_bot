@@ -28,7 +28,7 @@ internal sealed class SherpaWakeDetector : IWakeDetector
     private const string TokensFile = "tokens.txt";
 
     private readonly KeywordSpotter _spotter;
-    private readonly OnlineStream _stream;
+    private OnlineStream _stream;
     private bool _disposed;
 
     /// <summary>Dernière variante reconnue (mise au point).</summary>
@@ -55,18 +55,19 @@ internal sealed class SherpaWakeDetector : IWakeDetector
     }
 
     /// <summary>Construit si les fichiers sont présents et valides, sinon false.</summary>
-    internal static bool TryCreate(float threshold, float score, out SherpaWakeDetector? detector)
+    internal static bool TryCreate(float threshold, float score, out SherpaWakeDetector? detector, string? keywordsPath = null)
     {
         detector = null;
         try
         {
             string modelDir = ResolveModelDir();
+            string kw = keywordsPath ?? Path.Combine(modelDir, KeywordsFileName);
             if (!File.Exists(Path.Combine(modelDir, EncoderFile))
-                || !File.Exists(Path.Combine(modelDir, KeywordsFileName)))
+                || !File.Exists(kw))
             {
                 return false;
             }
-            detector = new SherpaWakeDetector(modelDir, threshold, score);
+            detector = new SherpaWakeDetector(modelDir, threshold, score, kw);
             return true;
         }
         catch
@@ -77,7 +78,7 @@ internal sealed class SherpaWakeDetector : IWakeDetector
         }
     }
 
-    private SherpaWakeDetector(string modelDir, float threshold, float score)
+    private SherpaWakeDetector(string modelDir, float threshold, float score, string keywordsPath)
     {
         var config = new KeywordSpotterConfig();
         config.FeatConfig.SampleRate = 16000;
@@ -89,7 +90,7 @@ internal sealed class SherpaWakeDetector : IWakeDetector
         config.ModelConfig.Provider = "cpu";
         config.ModelConfig.NumThreads = 1;
         config.ModelConfig.Debug = 0;
-        config.KeywordsFile = Path.Combine(modelDir, KeywordsFileName);
+        config.KeywordsFile = keywordsPath;
         config.KeywordsThreshold = threshold;
         config.KeywordsScore = score;
         _spotter = new KeywordSpotter(config);
@@ -108,14 +109,26 @@ internal sealed class SherpaWakeDetector : IWakeDetector
             if (keyword.Length > 0)
             {
                 LastKeyword = keyword;
-                _spotter.Reset(_stream);
+                Reset();
                 return true;
             }
         }
         return false;
     }
 
-    public void Reset() => _spotter.Reset(_stream);
+    /// <summary>
+    /// Stream vierge (pas de simple Reset : le reset natif laisse des résidus
+    /// d'encodeur qui faussent l'énoncé suivant — voir U3 en fichier chaîné).
+    /// </summary>
+    public void Reset()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+        _stream.Dispose();
+        _stream = _spotter.CreateStream();
+    }
 
     public void Dispose()
     {
@@ -140,8 +153,15 @@ internal sealed class WakeWordListener : IDisposable
 
     // Seuil d'alimentation (150/32768, bien au-dessus du plancher ~0,0002).
     private readonly double _gate;
-    private const int PreRollBuffers = 3;
+    // 7 tampons (~0,7 s) : longueur de contexte mesurée 3/3 sur les essais
+    // de référence (0,7 s : U1+U2+U3 matchent ; 1,2 s : aucun — l'encodeur
+    // streaming est sensible à la phase de découpage de l'historique).
+    private const int PreRollBuffers = 7;
 
+    // 700 ms : le spotter finalise le match 1 à 3 tampons APRÈS le dernier
+    // tampon fort (blancs traînants du transducteur) ; à 300 ms les essais
+    // à queue faible (« .o ») mouraient juste avant de matcher (U1).
+    internal static readonly TimeSpan BridgeHangover = TimeSpan.FromMilliseconds(700);
     private readonly IWakeDetector _detector;
     private readonly int _device;
     private readonly TimeSpan _quietHangover;
@@ -163,7 +183,9 @@ internal sealed class WakeWordListener : IDisposable
         _detector = detector;
 
         _gate = gateRms / 32768.0;        _device = deviceNumber;
-        _quietHangover = quietHangover ?? TimeSpan.FromSeconds(2);
+        // Un énoncé = parole + 700 ms de queue ; passé ce délai, stop + reset
+        // pour que l'énoncé suivant reparte d'un stream vierge (déterministe).
+        _quietHangover = quietHangover ?? BridgeHangover;
     }
 
     public void Start()
@@ -200,7 +222,7 @@ internal sealed class WakeWordListener : IDisposable
 
     internal void OnAudio(float[] samples)
     {
-        // VAD : on n'alimente le décodeur que sur parole (+300 ms avant),
+        // VAD : on n'alimente le décodeur que sur parole (+0,7 s avant, +700 ms après),
         // et on le réinitialise après un silence (état borné, pas de dérive).
         double sum = 0;
         foreach (float sample in samples)
@@ -215,6 +237,16 @@ internal sealed class WakeWordListener : IDisposable
         bool gateOpen = rms >= _gate;
         bool feedingAfter = false;        lock (_sync)
         {
+            // Scrute après chaque alimentation (drain du pré-roll inclus) :
+            // le décodeur élague ses hypothèses à chaque Decode.
+            void Poll()
+            {
+                if (_detector.TakeDetected() && DateTime.UtcNow - _lastFire > Cooldown)
+                {
+                    _lastFire = DateTime.UtcNow;
+                    fire = true;
+                }
+            }
             if (gateOpen)
             {
                 _quietSince = null;
@@ -222,24 +254,32 @@ internal sealed class WakeWordListener : IDisposable
                 {
                     _feeding = true;
 
-                    started = true;                    foreach (float[] old in _preRoll)
+                    started = true;
+                    // Départ déterministe : stream vierge + pré-roll à chaque énoncé.
+                    _detector.Reset();
+                    while (_preRoll.Count > 0)
                     {
-                        _detector.Feed(old);
+                        _detector.Feed(_preRoll.Dequeue());
+                        Poll();
                     }
-                }
-                _detector.Feed(samples);
+
+                }                _detector.Feed(samples);
             }
             else
             {
                 _quietSince ??= DateTime.UtcNow;
-                if (_feeding && DateTime.UtcNow - _quietSince > _quietHangover)
+                if (_feeding)
                 {
-                    _feeding = false;
-
-                    stopped = true;                    _preRoll.Clear();
-                    _detector.Reset();
-                }
-                else if (!_feeding)
+                    if (DateTime.UtcNow - _quietSince > _quietHangover)
+                    {
+                        _feeding = false;
+                        _detector.Reset();
+                    }
+                    else if (DateTime.UtcNow - _quietSince < BridgeHangover)
+                    {
+                        _detector.Feed(samples);
+                    }
+                }                else if (!_feeding)
                 {
                     _preRoll.Enqueue((float[])samples.Clone());
                     while (_preRoll.Count > PreRollBuffers)
@@ -248,11 +288,7 @@ internal sealed class WakeWordListener : IDisposable
                     }
                 }
             }
-            if (_detector.TakeDetected() && DateTime.UtcNow - _lastFire > Cooldown)
-            {
-                _lastFire = DateTime.UtcNow;
-                fire = true;
-            }
+            Poll();
         feedingAfter = _feeding;
         }
         if (fire)

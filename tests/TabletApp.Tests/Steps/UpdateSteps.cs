@@ -96,4 +96,18 @@ public sealed class UpdateSteps
     [Then("la version courante est conservée")]
     public void ThenConservee() =>
         Assert.Equal("1.0.0", _update.CurrentVersion);
+
+    [Then("des points d'attente remplacent le visage")]
+    public void ThenPointsAttente() =>
+        Assert.True(SimulatedUpdate.BusyDotsVisibleOffscreen(timeSeconds: 0.1));
+
+    [Then("les points d'attente sont animés")]
+    public void ThenPointsAnimes()
+    {
+        Assert.True(SimulatedUpdate.BusyDotPixels(0.1) < SimulatedUpdate.BusyDotPixels(0.9));
+        Assert.Equal(1, FacePainter.BusyDotCount(0.1));
+        Assert.Equal(2, FacePainter.BusyDotCount(0.5));
+        Assert.Equal(3, FacePainter.BusyDotCount(0.9));
+        Assert.Equal(1, FacePainter.BusyDotCount(1.3));
+    }
 }

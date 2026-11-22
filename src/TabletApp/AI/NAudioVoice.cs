@@ -103,6 +103,39 @@ internal static class NAudioVoice
         ct.ThrowIfCancellationRequested();
     }
 
+    /// <summary>Charge un WAV en mono 16 kHz flottant (convertit si besoin).</summary>
+    internal static bool LoadMono16k(string path, out float[]? samples)
+    {
+        samples = null;
+        try
+        {
+            if (!File.Exists(path))
+            {
+                return false;
+            }
+            using var reader = new WaveFileReader(path);
+            using var converted = reader.WaveFormat.SampleRate == 16000
+                && reader.WaveFormat.Channels == 1 && reader.WaveFormat.BitsPerSample == 16
+                ? null
+                : new WaveFormatConversionStream(new WaveFormat(16000, 16, 1), reader);
+            WaveStream source = (WaveStream?)converted ?? reader;
+            using var data = new MemoryStream();
+            source.CopyTo(data);
+            byte[] bytes = data.ToArray();
+            samples = new float[bytes.Length / 2];
+            for (int i = 0; i < samples.Length; i++)
+            {
+                samples[i] = (short)(bytes[i * 2] | (bytes[i * 2 + 1] << 8)) / 32768f;
+            }
+            return true;
+        }
+        catch
+        {
+            samples = null;
+            return false;
+        }
+    }
+
     /// <summary>Niveau RMS d'un buffer PCM 16 bits mono (0 = silence).</summary>
     internal static double ComputeRms(byte[] buffer, int count)
     {

@@ -51,3 +51,9 @@ Fonctionnalité: Mise à jour depuis le NAS
     Quand on appuie sur l'icône de mise à jour
     Et on appuie sur l'œil droit
     Alors la version courante est conservée
+
+  Scénario: Points animés pendant l'installation
+    Soit une source de maj proposant la version "1.0.1"
+    Quand le robot vérifie les mises à jour
+    Alors des points d'attente remplacent le visage
+    Et les points d'attente sont animés

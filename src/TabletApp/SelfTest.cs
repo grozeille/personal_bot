@@ -585,8 +585,9 @@ internal static class SelfTest
         listener.OnAudio(new float[160]);
         listener.OnAudio(new float[160]);
         listener.OnAudio(new float[160]);
-        WakeWordOptions options = WakeWordOptions.Load(Path.Combine(
-            Path.GetTempPath(), "tabletapp-jamais-un-fichier.json"));
+        WakeWordOptions options = WakeWordOptions.Load(
+            Path.Combine(Path.GetTempPath(), "tabletapp-jamais-un-fichier.json"),
+            Path.Combine(Path.GetTempPath(), "tabletapp-jamais-une-calibration.json"));
         bool defaultsOk = options.Threshold == WakeWordOptions.DefaultThreshold
             && options.Score == WakeWordOptions.DefaultScore;
         // Moteur natif réel si le modèle est présent (sinon : non testé, pas un échec).
@@ -615,7 +616,9 @@ internal static class SelfTest
         listener2.OnAudio(silence);
         Thread.Sleep(70);
         listener2.OnAudio(silence);
-        bool resetOk = gated.Resets == 1 && gated.FeedCalls == 3;
+        // Ouverture : 1 reset + drain ; queue de 700 ms alimentée (+1 feed) ;
+        // hangover dépassé : stop + 2e reset.
+        bool resetOk = gated.Resets == 2 && gated.FeedCalls == 4;
         bool ok = fires == 1 && defaultsOk && nativeOk && gateOk && resetOk;
         log.Add($"WakeWord: déclenchements={fires}/1 attendu, défauts={defaultsOk}, " +
             $"natif={(nativeTested ? nativeOk.ToString() : "absent")}, " +
@@ -1299,6 +1302,876 @@ internal static class SelfTest
     /// Sonde wake word (--wake-probe) : 30 s d'écoute avec niveaux, porte et
     /// détections affichés + indices de dépannage. Micro réel requis.
     /// </summary>
+    /// <summary>
+    /// Enregistre 12 s de micro (16 kHz mono) vers %TEMP%\wake-heypatate.wav
+    /// pour le balayage --wake-sweep. Reste local, jamais commité.
+    /// </summary>
+    public static bool WakeRecord()
+    {
+        string path = Path.Combine(Path.GetTempPath(), "wake-heypatate.wav");
+        Console.WriteLine("Dites « Hey Patate » 3 fois, à voix normale (12 s)...");
+        try
+        {
+            using var input = new NAudio.Wave.WaveInEvent
+            {
+                WaveFormat = new NAudio.Wave.WaveFormat(16000, 16, 1),
+            };
+            using var writer = new NAudio.Wave.WaveFileWriter(path, input.WaveFormat);
+            double peak = 0;
+            object sync = new();
+            input.DataAvailable += (_, e) =>
+            {
+                lock (sync)
+                {
+                    writer.Write(e.Buffer, 0, e.BytesRecorded);
+                    double rms = TabletApp.AI.NAudioVoice.ComputeRms(e.Buffer, e.BytesRecorded);
+                    if (rms > peak)
+                    {
+                        peak = rms;
+                    }
+                }
+            };
+            input.StartRecording();
+            Thread.Sleep(TimeSpan.FromSeconds(12));
+            input.StopRecording();
+            Thread.Sleep(500);
+            Console.WriteLine($"Fichier : {path} (RMS max {peak:F0}, {new FileInfo(path).Length / 1024} Ko).");
+            return peak > 20;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Enregistrement impossible : {ex.Message} -> KO");
+            return false;
+        }
+    }
+
+    public static bool LiveRecord(int seconds, string? path)
+    {
+        path ??= Path.Combine(Path.GetTempPath(), "live-conversation.wav");
+        (int at, string cue)[] cues =
+        {
+            (0, "Restez silencieux..."),
+            (2, "Dites : « Hey Patate »"),
+            (6, "Dites : « Bonjour Patate, comment tu t'appelles ? »"),
+            (11, "Dites : « Raconte-moi une blague de prout »"),
+            (16, "Dites : « Au revoir Patate »"),
+            (20, "Restez silencieux..."),
+        };
+        Console.WriteLine($"Enregistrement {seconds} s (micro device 0, comme Live)...");
+        try
+        {
+            using var input = new NAudio.Wave.WaveInEvent
+            {
+                WaveFormat = new NAudio.Wave.WaveFormat(16000, 16, 1),
+            };
+            using var writer = new NAudio.Wave.WaveFileWriter(path, input.WaveFormat);
+            double peak = 0;
+            double[] buckets = new double[Math.Max(seconds / 5, 1)];
+            int chunks = 0;
+            object sync = new();
+            input.DataAvailable += (_, e) =>
+            {
+                lock (sync)
+                {
+                    writer.Write(e.Buffer, 0, e.BytesRecorded);
+                    double rms = TabletApp.AI.NAudioVoice.ComputeRms(e.Buffer, e.BytesRecorded);
+                    if (rms > peak)
+                    {
+                        peak = rms;
+                    }
+                    int b = Math.Min(chunks * buckets.Length / Math.Max(seconds * 10, 1), buckets.Length - 1);
+                    if (rms > buckets[b])
+                    {
+                        buckets[b] = rms;
+                    }
+                    chunks++;
+                }
+            };
+            input.StartRecording();
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            int next = 0;
+            while (watch.Elapsed.TotalSeconds < seconds)
+            {
+                if (seconds == 30 && next < cues.Length && watch.Elapsed.TotalSeconds >= cues[next].at)
+                {
+                    Console.WriteLine($"  t={cues[next].at,2} s : {cues[next].cue}");
+                    next++;
+                }
+                Thread.Sleep(100);
+            }
+            input.StopRecording();
+            Thread.Sleep(500);
+            for (int b = 0; b < buckets.Length; b++)
+            {
+                Console.WriteLine($"  RMS max t={b * 5}-{(b + 1) * 5} s : {buckets[b]:F0}");
+            }
+            Console.WriteLine($"Fichier : {path} (RMS max {peak:F0}, {new FileInfo(path).Length / 1024} Ko).");
+            return peak > 20;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Enregistrement impossible : {ex.Message} -> KO");
+            return false;
+        }
+    }
+
+    private sealed class SimSocket : TabletApp.AI.ILiveSocket
+    {
+        private readonly object _sync = new();
+        public readonly List<string> Sent = new();
+        public string? LastError => null;
+        public string? LastCloseStatus => null;
+        public Task ConnectAsync(string url, string apiKey, CancellationToken ct) => Task.CompletedTask;
+        public Task SendAsync(string json, CancellationToken ct)
+        {
+            lock (_sync)
+            {
+                Sent.Add(json);
+            }
+            return Task.CompletedTask;
+        }
+        public Task<string?> ReceiveAsync(CancellationToken ct) => Task.FromResult<string?>(null);
+        public Task CloseAsync(CancellationToken ct) => Task.CompletedTask;
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public int Count
+        {
+            get
+            {
+                lock (_sync)
+                {
+                    return Sent.Count;
+                }
+            }
+        }
+        public int CountSince(int before, out int audio, out bool turn)
+        {
+            audio = 0;
+            turn = false;
+            lock (_sync)
+            {
+                for (int m = before; m < Sent.Count; m++)
+                {
+                    if (Sent[m].Contains("turnComplete"))
+                    {
+                        turn = true;
+                    }
+                    else
+                    {
+                        audio++;
+                    }
+                }
+                return Sent.Count;
+            }
+        }
+
+        /// <summary>Décode les PCM des messages audio envoyés depuis before.</summary>
+        public List<byte[]> AudiosSince(int before)
+        {
+            var pcms = new List<byte[]>();
+            lock (_sync)
+            {
+                for (int m = before; m < Sent.Count; m++)
+                {
+                    if (Sent[m].Contains("turnComplete"))
+                    {
+                        continue;
+                    }
+                    try
+                    {
+                        using var doc = System.Text.Json.JsonDocument.Parse(Sent[m]);
+                        string? data = doc.RootElement
+                            .GetProperty("realtimeInput").GetProperty("audio")
+                            .GetProperty("data").GetString();
+                        if (data is not null)
+                        {
+                            pcms.Add(Convert.FromBase64String(data));
+                        }
+                    }
+                    catch
+                    {
+                        // Message inattendu : ignoré (diagnostic).
+                    }
+                }
+            }
+            return pcms;
+        }
+    }
+
+    private sealed class SimMic : TabletApp.AI.ILiveMic
+    {
+#pragma warning disable CS0067 // Jamais levé : le sim injecte via FeedTestChunk.
+        public event Action<byte[]>? Chunk;
+#pragma warning restore CS0067
+        public void Start()
+        {
+        }
+        public void Stop()
+        {
+        }
+        public void Dispose()
+        {
+        }
+    }
+
+    private sealed class SimPlayer : TabletApp.AI.ILivePlayer
+    {
+        public void PlayChunk(byte[] pcm24k)
+        {
+        }
+        public void Clear()
+        {
+        }
+        public void Start()
+        {
+        }
+        public void Stop()
+        {
+        }
+        public void Dispose()
+        {
+        }
+    }
+
+    public static bool LiveSim(string? path)
+    {
+        path ??= Path.Combine(Path.GetTempPath(), "live-conversation.wav");
+        if (!TryLoadMono16k(path, out float[]? samples) || samples is null)
+        {
+            return false;
+        }
+        var socket = new SimSocket();
+        var events = new TabletApp.AI.LiveCallbacks(
+            _ => { }, _ => { }, _ => { }, _ => { }, _ => { }, _ => { }, _ => { },
+            () => Console.WriteLine("  (parole détectée)"),
+            msg => Console.WriteLine("  LOG: " + msg));
+        var session = new TabletApp.AI.LiveSession(
+            "sim", "sim", Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(),
+            socket, new SimMic(), new SimPlayer(), events);
+        const int frame = 1600;
+        int frames = samples.Length / frame;
+        var spark = new System.Text.StringBuilder();
+        double maxRms = 0;
+        int sentChunks = 0;
+        int loudChunks = 0;
+        int turns = 0;
+        int turnAudio = 0;
+        var turnPcm = new List<byte[]>();
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        for (int f = 0; f < frames; f++)
+        {
+            byte[] bytes = new byte[frame * 2];
+            double sum = 0;
+            for (int i = 0; i < frame; i++)
+            {
+                float s = samples[f * frame + i];
+                sum += s * s;
+                short v = (short)Math.Clamp(s * 32768.0, short.MinValue, short.MaxValue);
+                bytes[i * 2] = (byte)(v & 0xFF);
+                bytes[i * 2 + 1] = (byte)((v >> 8) & 0xFF);
+            }
+            double rms = Math.Sqrt(sum / frame) * 32768;
+            if (rms > maxRms)
+            {
+                maxRms = rms;
+            }
+            if (rms >= TabletApp.AI.NAudioVoice.SpeechRmsThreshold)
+            {
+                loudChunks++;
+            }
+            int before = socket.Count;
+            session.FeedTestChunk(bytes);
+            socket.CountSince(before, out int audio, out bool turn);
+            foreach (byte[] pcm in socket.AudiosSince(before))
+            {
+                turnPcm.Add(pcm);
+            }
+            sentChunks += audio;
+            turnAudio += audio;
+            spark.Append(rms < 150 ? '.' : rms < 500 ? 'o' : rms < 1500 ? 'O' : '#');
+            if (turn)
+            {
+                turns++;
+                Console.WriteLine($"  TOUR {turns} fini à t={f * 0.1:F1} s ({turnAudio} chunks audio envoyés).");
+                if (turnPcm.Count > 0)
+                {
+                    string dump = Path.Combine(Path.GetTempPath(), $"livesim-tour-{turns}.wav");
+                    using var writer = new NAudio.Wave.WaveFileWriter(dump,
+                        new NAudio.Wave.WaveFormat(16000, 16, 1));
+                    foreach (byte[] pcm in turnPcm)
+                    {
+                        writer.Write(pcm, 0, pcm.Length);
+                    }
+                    Console.WriteLine($"  audio envoyé : {dump}.");
+                    turnPcm.Clear();
+                }
+                turnAudio = 0;
+                Thread.Sleep(2300);
+                session.SimulateModelActivity();
+            }
+            int waitMs = (f + 1) * 100 - (int)watch.ElapsedMilliseconds;
+            if (waitMs > 0)
+            {
+                Thread.Sleep(waitMs);
+            }
+        }
+        Console.WriteLine("Niveaux : " + spark.ToString());
+        Console.WriteLine($"Chunks : {frames}, forts (>=500) : {loudChunks}, audio envoyés : {sentChunks}, tours : {turns}.");
+        Console.WriteLine($"RMS max : {maxRms:F0}.");
+        return true;
+    }
+
+    public static bool Enroll()
+    {
+        string? key;
+        try
+        {
+            key = TabletApp.AI.GeminiKey.Resolve();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Clé Gemini : {ex.Message} -> KO");
+            return false;
+        }
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            Console.WriteLine("Clé Gemini manquante -> KO");
+            return false;
+        }
+        var speech = new TabletApp.AI.GeminiSpeech(key);
+        async Task Speak(string text, CancellationToken ct)
+        {
+            Console.WriteLine($"Robot : {text}");
+            byte[] wav = await speech.SpeakAsync(text, ct).ConfigureAwait(false);
+            await TabletApp.AI.NAudioVoice.PlayAsync(wav, ct).ConfigureAwait(false);
+        }
+        Task<TabletApp.AI.VoiceClip> Record(int seconds, CancellationToken ct)
+        {
+            Console.WriteLine($"  (enregistrement {seconds} s...)");
+            return TabletApp.AI.NAudioVoice.RecordAsync(TimeSpan.FromSeconds(seconds), ct);
+        }
+        try
+        {
+            TabletApp.AI.CalibrationVerdict verdict = TabletApp.AI.WakeEnrollment.RunWizardAsync(
+                Speak, Record, (wav, ct) => speech.TranscribeAsync(wav, ct), Console.WriteLine, _ => { },
+                TabletApp.AI.CalibrationPaths.Default, CancellationToken.None)
+                .GetAwaiter().GetResult();
+            Console.WriteLine(verdict.Ok
+                ? $"Enrôlement : OK ({verdict.Reason})."
+                : $"Enrôlement : {verdict.Reason} (réglages livrés conservés).");
+            return verdict.Ok;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Enrôlement impossible : {ex.Message} -> KO");
+            return false;
+        }
+    }
+
+    public static bool EnrollSim(IReadOnlyList<string> files)
+    {
+        string? key;
+        try
+        {
+            key = TabletApp.AI.GeminiKey.Resolve();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Clé Gemini : {ex.Message} -> KO");
+            return false;
+        }
+        if (string.IsNullOrWhiteSpace(key) || files.Count < 2)
+        {
+            Console.WriteLine("Usage : --enroll-sim silence.wav prise1.wav [prise2...] (clé requise).");
+            return false;
+        }
+        var speech = new TabletApp.AI.GeminiSpeech(key);
+        int next = 0;
+        Task<TabletApp.AI.VoiceClip> Record(int seconds, CancellationToken ct)
+        {
+            int at = Math.Min(next++, files.Count - 1);
+            byte[] wav = File.ReadAllBytes(files[at]);
+            byte[] pcm = new byte[Math.Max(0, wav.Length - 44)];
+            Array.Copy(wav, Math.Min(44, wav.Length), pcm, 0, pcm.Length);
+            double peak = 0;
+            for (int off = 0; off + 3200 <= pcm.Length; off += 3200)
+            {
+                double rms = TabletApp.AI.NAudioVoice.ComputeRms(pcm.Skip(off).Take(3200).ToArray(), 3200);
+                if (rms > peak)
+                {
+                    peak = rms;
+                }
+            }
+            double secs = pcm.Length / 2.0 / 16000.0;
+            Console.WriteLine($"  (prise simulée : {Path.GetFileName(files[at])}, pic {peak:F0})");
+            return Task.FromResult(new TabletApp.AI.VoiceClip(
+                wav, peak >= 500, peak, TimeSpan.FromSeconds(secs)));
+        }
+        string dir = Path.Combine(Path.GetTempPath(), "enroll-sim-" + Path.GetRandomFileName());
+        try
+        {
+            TabletApp.AI.CalibrationVerdict verdict = TabletApp.AI.WakeEnrollment.RunWizardAsync(
+                (text, ct) => { Console.WriteLine($"Robot : {text}"); return Task.CompletedTask; },
+                Record,
+                (wav, ct) => speech.TranscribeAsync(wav, ct),
+                Console.WriteLine,
+                phase => Console.WriteLine($"  [phase {phase}]"),
+                new TabletApp.AI.CalibrationPaths(
+                    TabletApp.AI.CalibrationPaths.Default.BankPath,
+                    Path.Combine(dir, "keywords-patate.txt"),
+                    Path.Combine(dir, "wake-calibration.json")),
+                CancellationToken.None, dir).GetAwaiter().GetResult();
+            Console.WriteLine($"Verdict : {(verdict.Ok ? "OK" : "KO")} ({verdict.Reason}).");
+            if (verdict.Ok)
+            {
+                byte[] kw = File.ReadAllBytes(Path.Combine(dir, "keywords-patate.txt"));
+                Console.WriteLine($"  mots-clés : {System.Text.Encoding.UTF8.GetString(kw).Trim()} " +
+                    $"(BOM : {kw.Length >= 3 && kw[0] == 0xEF && kw[1] == 0xBB && kw[2] == 0xBF})");
+                TabletApp.AI.WakeWordOptions loaded = TabletApp.AI.WakeWordOptions.Load(
+                    Path.Combine(Path.GetTempPath(), "tabletapp-jamais-un-fichier.json"),
+                    Path.Combine(dir, "wake-calibration.json"));
+                Console.WriteLine($"  relus : seuil={loaded.Threshold} porte={loaded.GateRms}.");
+            }
+            return verdict.Ok;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Sim impossible : {ex.Message} -> KO");
+            return false;
+        }
+    }
+
+    public static bool WakePick(IReadOnlyList<string> takes, string? silence, bool apply)
+    {
+        string silencePath = silence ?? Path.Combine(Path.GetTempPath(), "wake-sil.wav");
+        try
+        {
+            TabletApp.AI.CalibrationVerdict verdict = TabletApp.AI.WakeEnrollment.CalibrateAsync(
+                takes, silencePath,
+                TabletApp.AI.CalibrationPaths.Default.BankPath,
+                Console.WriteLine, CancellationToken.None).GetAwaiter().GetResult();
+            Console.WriteLine($"Verdict : {(verdict.Ok ? "OK" : "KO")} ({verdict.Reason}).");
+            if (verdict.Ok)
+            {
+                Console.WriteLine($"  gagnant : {verdict.WinnerLine}");
+                Console.WriteLine($"  seuil={verdict.Threshold} porte={verdict.GateRms}");
+            }
+            if (verdict.Ok && apply && verdict.WinnerLine is not null)
+            {
+                TabletApp.AI.WakeEnrollment.EnsureOverrideModelDir();
+                TabletApp.AI.WakeEnrollment.WriteKeywordsNoBom(
+                    TabletApp.AI.CalibrationPaths.Default.OverrideKeywordsPath,
+                    new[] { verdict.WinnerLine });
+                TabletApp.AI.WakeWordOptions.SaveOverride(
+                    TabletApp.AI.CalibrationPaths.Default.OverrideOptionsPath,
+                    new TabletApp.AI.WakeWordOptions(verdict.Threshold, 1.0f, verdict.GateRms),
+                    takes.Count, verdict.WinnerLine);
+                Console.WriteLine("  calibration écrite.");
+            }
+            return verdict.Ok;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Pick impossible : {ex.Message} -> KO");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Balayage hors-ligne : rejoue un WAV 16 kHz mono dans le vrai détecteur
+    /// sherpa + écouteur, pour seuils × portes. Affiche les détections par réglage.
+    /// </summary>
+    private static bool TryLoadMono16k(string path, out float[]? samples)
+    {
+        if (!File.Exists(path))
+        {
+            Console.WriteLine($"Échantillon introuvable : {path} (lancez --wake-record).");
+            samples = null;
+            return false;
+        }
+        if (!TabletApp.AI.NAudioVoice.LoadMono16k(path, out samples))
+        {
+            Console.WriteLine($"Lecture impossible : {path} -> KO");
+            return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Décode un WAV avec le transducteur lui-même (téléphones) pour écrire
+    /// les variantes du fichier keywords (--wake-decode).
+    /// </summary>
+    /// <summary>
+    /// Transcrit un WAV via Gemini STT (témoin indépendant, --stt-file).
+    /// </summary>
+    /// <summary>
+    /// Synthétise un texte via Gemini TTS vers %TEMP%\say.wav (--say).
+    /// </summary>
+    public static bool Say(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            Console.WriteLine("Usage : --say « texte ».");
+            return false;
+        }
+        string? key;
+        try
+        {
+            key = TabletApp.AI.GeminiKey.Resolve();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Clé Gemini : {ex.Message} -> KO");
+            return false;
+        }
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            Console.WriteLine("Clé Gemini manquante -> KO");
+            return false;
+        }
+        try
+        {
+            var speech = new TabletApp.AI.GeminiSpeech(key);
+            byte[] wav = speech.SpeakAsync(text, CancellationToken.None).GetAwaiter().GetResult();
+            string path = Path.Combine(Path.GetTempPath(), "say.wav");
+            File.WriteAllBytes(path, wav);
+            Console.WriteLine($"Dit : {path} ({wav.Length / 1024} Ko).");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Synthèse impossible : {ex.Message} -> KO");
+            return false;
+        }
+    }
+
+    public static bool SttFile(string? path)
+    {
+        path ??= Path.Combine(Path.GetTempPath(), "wake-heypatate.wav");
+        if (!File.Exists(path))
+        {
+            Console.WriteLine($"Fichier introuvable : {path}.");
+            return false;
+        }
+        string? key;
+        try
+        {
+            key = TabletApp.AI.GeminiKey.Resolve();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Clé Gemini : {ex.Message} -> KO");
+            return false;
+        }
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            Console.WriteLine("Clé Gemini manquante -> KO");
+            return false;
+        }
+        try
+        {
+            var speech = new TabletApp.AI.GeminiSpeech(key);
+            string? text = speech.TranscribeAsync(
+                File.ReadAllBytes(path), CancellationToken.None).GetAwaiter().GetResult();
+            Console.WriteLine("STT : " + (text ?? "(rien)"));
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"STT impossible : {ex.Message} -> KO");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Teste un fichier keywords candidat sur un WAV (découverte de variantes,
+    /// --wake-try fic [wav] [seuil]). Affiche les coups par label.
+    /// </summary>
+    /// <summary>
+    /// Rejoue un WAV en temps réel dans le vrai écouteur (réglages prod) :
+    /// prédit exactement le comportement live (--wake-live [wav] [porte]).
+    /// </summary>
+    public static bool WakeSlice(string? path, double fromSec, double toSec, string? dest)
+    {
+        path ??= Path.Combine(Path.GetTempPath(), "wake-heypatate.wav");
+        if (!TryLoadMono16k(path, out float[]? samples) || samples is null)
+        {
+            return false;
+        }
+        int from = Math.Clamp((int)(fromSec * 16000), 0, samples.Length);
+        int to = Math.Clamp((int)(toSec * 16000), 0, samples.Length);
+        if (to <= from)
+        {
+            Console.WriteLine("Usage : --wake-slice [wav] t0 t1 [dst.wav] (t0 < t1, secondes).");
+            return false;
+        }
+        dest ??= Path.Combine(Path.GetTempPath(), $"wake-slice-{fromSec:F1}-{toSec:F1}.wav");
+        using var writer = new NAudio.Wave.WaveFileWriter(dest, new NAudio.Wave.WaveFormat(16000, 16, 1));
+        byte[] bytes = new byte[(to - from) * 2];
+        for (int i = from; i < to; i++)
+        {
+            short v = (short)Math.Clamp(samples[i] * 32768.0, short.MinValue, short.MaxValue);
+            bytes[(i - from) * 2] = (byte)(v & 0xFF);
+            bytes[(i - from) * 2 + 1] = (byte)((v >> 8) & 0xFF);
+        }
+        writer.Write(bytes, 0, bytes.Length);
+        Console.WriteLine($"Tranche écrite : {dest} ({(to - from) / 16000.0:F1} s).");
+        return true;
+    }
+
+    public static bool WakeLive(string? path, double gateRms, string? keywordsPath = null)
+    {
+        path ??= Path.Combine(Path.GetTempPath(), "wake-heypatate.wav");
+        if (!TryLoadMono16k(path, out float[]? samples) || samples is null)
+        {
+            return false;
+        }
+        TabletApp.AI.WakeWordOptions options = TabletApp.AI.WakeWordOptions.Load();
+        if (!TabletApp.AI.SherpaWakeDetector.TryCreate(
+            options.Threshold, options.Score, out TabletApp.AI.SherpaWakeDetector? detector, keywordsPath)
+            || detector is null)
+        {
+            Console.WriteLine("Détecteur : IMPOSSIBLE -> KO");
+            return false;
+        }
+        using (detector)
+        {
+            using var listener = new TabletApp.AI.WakeWordListener(detector, gateRms: gateRms);
+            int fed = 0;
+            listener.Detected += () => Console.WriteLine($"  HIT {detector.LastKeyword} @ t={fed * 0.1:F1}s");
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            const int frame = 1600;
+            for (int at = 0; at + frame <= samples.Length; at += frame)
+            {
+                float[] chunk = new float[frame];
+                Array.Copy(samples, at, chunk, 0, frame);
+                listener.OnAudio(chunk);
+                fed++;
+                int waitMs = (fed + 1) * 100 - (int)watch.ElapsedMilliseconds;
+                if (waitMs > 0)
+                {
+                    Thread.Sleep(waitMs);
+                }
+            }
+            Console.WriteLine($"Rejeu temps réel terminé ({fed} tampons).");
+        }
+        return true;
+    }
+
+    public static bool WakeTry(string? keywordsPath, string? path, float threshold, float score)
+    {
+        if (string.IsNullOrWhiteSpace(keywordsPath) || !File.Exists(keywordsPath))
+        {
+            Console.WriteLine("Usage : --wake-try keywords.txt [wav] [seuil].");
+            return false;
+        }
+        path ??= Path.Combine(Path.GetTempPath(), "wake-heypatate.wav");
+        if (!TryLoadMono16k(path, out float[]? samples) || samples is null)
+        {
+            return false;
+        }
+        if (!TabletApp.AI.SherpaWakeDetector.TryCreate(
+            threshold, score, out TabletApp.AI.SherpaWakeDetector? detector, keywordsPath)
+            || detector is null)
+        {
+            Console.WriteLine("Détecteur : IMPOSSIBLE -> KO");
+            return false;
+        }
+        using (detector)
+        {
+            var hits = new Dictionary<string, int>(StringComparer.Ordinal);
+            const int frame = 1600;
+            for (int at = 0; at + frame <= samples.Length; at += frame)
+            {
+                float[] chunk = new float[frame];
+                Array.Copy(samples, at, chunk, 0, frame);
+                detector.Feed(chunk);
+                while (detector.TakeDetected())
+                {
+                    string label = detector.LastKeyword;
+                    hits[label] = hits.TryGetValue(label, out int n) ? n + 1 : 1;
+                    Console.WriteLine($"  HIT {label} @ t={at / 16000.0:F1}s");
+                }
+            }
+            if (hits.Count == 0)
+            {
+                Console.WriteLine("  (aucun hit)");
+            }
+            foreach (var pair in hits.OrderByDescending(p => p.Value))
+            {
+                Console.WriteLine($"  {pair.Key} : {pair.Value}");
+            }
+        }
+        return true;
+    }
+
+    public static bool WakeDecode(string? path, double gain)
+    {
+        path ??= Path.Combine(Path.GetTempPath(), "wake-heypatate.wav");
+        if (!TryLoadMono16k(path, out float[]? samples) || samples is null)
+        {
+            return false;
+        }
+        if (Math.Abs(gain - 1.0) > 0.001)
+        {
+            for (int i = 0; i < samples.Length; i++)
+            {
+                samples[i] = Math.Clamp(samples[i] * (float)gain, -1f, 1f);
+            }
+            Console.WriteLine($"Gain appliqué : x{gain:F1}.");
+        }
+        string dir = TabletApp.AI.SherpaWakeDetector.ResolveModelDir();
+        try
+        {
+            var modelConfig = new SherpaOnnx.OnlineModelConfig();
+            modelConfig.Transducer.Encoder = Path.Combine(dir, "encoder-epoch-13-avg-2-chunk-8-left-64.int8.onnx");
+            modelConfig.Transducer.Decoder = Path.Combine(dir, "decoder-epoch-13-avg-2-chunk-8-left-64.onnx");
+            modelConfig.Transducer.Joiner = Path.Combine(dir, "joiner-epoch-13-avg-2-chunk-8-left-64.int8.onnx");
+            modelConfig.Tokens = Path.Combine(dir, "tokens.txt");
+            modelConfig.NumThreads = 1;
+            modelConfig.Provider = "cpu";
+            modelConfig.Debug = 1;
+            modelConfig.ModelingUnit = "phone";
+            var featConfig = new SherpaOnnx.FeatureConfig();
+            featConfig.SampleRate = 16000;
+            featConfig.FeatureDim = 80;
+            var config = new SherpaOnnx.OnlineRecognizerConfig();
+            config.FeatConfig = featConfig;
+            config.ModelConfig = modelConfig;
+            config.DecodingMethod = "greedy_search";
+            config.EnableEndpoint = 0;
+            using var recognizer = new SherpaOnnx.OnlineRecognizer(config);
+            using var stream = recognizer.CreateStream();
+            const int frame = 1600;
+            int decodes = 0;
+            for (int at = 0; at < samples.Length; at += frame)
+            {
+                int n = Math.Min(frame, samples.Length - at);
+                float[] chunk = new float[n];
+                Array.Copy(samples, at, chunk, 0, n);
+                stream.AcceptWaveform(16000, chunk);
+                while (recognizer.IsReady(stream))
+                {
+                    recognizer.Decode(stream);
+                    decodes++;
+                }
+            }
+            stream.InputFinished();
+            while (recognizer.IsReady(stream))
+            {
+                recognizer.Decode(stream);
+                decodes++;
+            }
+            Console.WriteLine($"Décodages : {decodes}");
+            SherpaOnnx.OnlineRecognizerResult decoded = recognizer.GetResult(stream);
+            Console.WriteLine("Téléphones : " + decoded.Text);
+            Console.WriteLine("Tokens : " + string.Join(" ", decoded.Tokens));
+            for (int s = 0; s < samples.Length / 16000; s++)
+            {
+                double sum = 0;
+                for (int i = 0; i < 16000; i++)
+                {
+                    double v = samples[s * 16000 + i];
+                    sum += v * v;
+                }
+                Console.WriteLine($"  t={s}s RMS={Math.Sqrt(sum / 16000) * 32768:F0}");
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Décodage impossible : {ex.Message} -> KO");
+            return false;
+        }
+    }
+
+    public static bool WakeSweep(string? path, double gain)
+    {
+        path ??= Path.Combine(Path.GetTempPath(), "wake-heypatate.wav");
+        if (!TryLoadMono16k(path, out float[]? samples) || samples is null)
+        {
+            return false;
+        }
+
+        if (Math.Abs(gain - 1.0) > 0.001)
+        {
+            for (int i = 0; i < samples.Length; i++)
+            {
+                samples[i] = Math.Clamp(samples[i] * (float)gain, -1f, 1f);
+            }
+            Console.WriteLine($"Gain appliqué : x{gain:F1}.");
+        }
+        const int frame = 1600;
+        int frames = samples.Length / frame;
+        double maxRms = 0;
+        int[] above = new int[3];
+        double[] gates = { 50.0 / 32768, 150.0 / 32768, 300.0 / 32768 };
+        for (int f = 0; f < frames; f++)
+        {
+            double sum = 0;
+            for (int i = 0; i < frame; i++)
+            {
+                double s = samples[f * frame + i];
+                sum += s * s;
+            }
+            double rms = Math.Sqrt(sum / frame);
+            if (rms > maxRms)
+            {
+                maxRms = rms;
+            }
+            for (int g = 0; g < gates.Length; g++)
+            {
+                if (rms >= gates[g])
+                {
+                    above[g]++;
+                }
+            }
+        }
+        Console.WriteLine($"Échantillon : {samples.Length / 16000.0:F1} s, RMS max {maxRms * 32768:F0}, " +
+            $"buffers au-dessus des portes 50/150/300 : {above[0]}/{above[1]}/{above[2]}/{frames}.");
+        var spark = new System.Text.StringBuilder();
+        for (int f = 0; f < frames; f++)
+        {
+            double sum = 0;
+            for (int i = 0; i < frame; i++)
+            {
+                double s = samples[f * frame + i];
+                sum += s * s;
+            }
+            double r = Math.Sqrt(sum / frame) * 32768;
+            spark.Append(r < 50 ? '.' : r < 150 ? 'o' : r < 300 ? 'O' : '#');
+        }
+        Console.WriteLine("Niveaux : " + spark.ToString());
+        float[] thresholds = { 0.05f, 0.10f, 0.15f, 0.25f, 0.35f };
+        double[] gateRms = { 50.0, 150.0, 300.0 };
+        foreach (float threshold in thresholds)
+        {
+            if (!TabletApp.AI.SherpaWakeDetector.TryCreate(
+                threshold, 1.0f, out TabletApp.AI.SherpaWakeDetector? detector) || detector is null)
+            {
+                Console.WriteLine("Détecteur : IMPOSSIBLE (modèle absent ?) -> KO");
+                return false;
+            }
+            using (detector)
+            {
+                foreach (double gate in gateRms)
+                {
+                    detector.Reset();
+                    using var listener = new TabletApp.AI.WakeWordListener(detector, gateRms: gate);
+                    int fires = 0;
+                    listener.Detected += () => fires++;
+                    for (int f = 0; f < frames; f++)
+                    {
+                        float[] chunk = new float[frame];
+                        Array.Copy(samples, f * frame, chunk, 0, frame);
+                        listener.OnAudio(chunk);
+                    }
+                    Console.WriteLine($"  seuil={threshold:F2} porte={gate:F0} -> détections={fires}");
+                }
+            }
+        }
+        return true;
+    }
+
     public static bool WakeProbe()
     {
         Console.WriteLine("Micros WinMM :");

@@ -10,7 +10,7 @@ Prix relevés le 21 nov. 2026, à confirmer au panier.
 | Image | Pièce | Spec | Qté | Prix indicatif | Note |
 |---|---|---|---|---|---|
 | <a href="https://www.amazon.ca/s?k=MG996R+servo+metal+180"><img src="img/mg996r.webp" width="140"></a> | Servo Pan | MG996R, couple ~10 kg·cm, pignons métal | 1 | ~14 $ | Miuzei validé (180°, métal) ; 1 seul (pas de roll) |
-| <a href="https://www.amazon.ca/dp/B0769DFJVK"><img src="img/ds3218.jpg" width="140"></a> | Servo Tilt | DS3218, couple ~20 kg·cm, pignons métal | 1 | 22,99 $ | Plus fort : il porte la tablette ; version 180° (pas 270°) |
+| <a href="https://www.amazon.ca/dp/B0CCXRCFK4"><img src="img/ds3218.jpg" width="140"></a> | Servo Tilt | Wishiot RDS3218 270° waterproof + étrier U, 40×20×40 mm, 60 g, 21,5 kg·cm @5 V (25 @6,8 V), 25T | 1 | prix à confirmer | 270° (fils noir-rouge-blanc, + au centre) ; étrier U inclus ; butées soft pitch -30/+45 conservées |
 | <a href="https://www.amazon.ca/dp/B014KTSMLA"><img src="img/pca9685.jpg" width="140"></a> | Contrôleur PWM | PCA9685 16 canaux, I2C | 1 | 15,98 $ | SDA/SCL/3.3V/GND vers le Pi |
 | — | Raspberry Pi | Pi 1 Model B Rev 2 (vérifié, EN STOCK) | 1 | 0 (stock) | Serveur Go (#28), pas d'achat |
 | <a href="https://www.amazon.ca/dp/B09JW28WQC"><img src="img/alim.jpg" width="140"></a> | Alim servos | 5 V / 4 A minimum, jack ou bornier | 1 | ~20 $ | Ligne séparée du Pi (jamais le 5V du Pi pour les servos) |

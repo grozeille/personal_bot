@@ -1,6 +1,6 @@
-# Rapport de tests BDD — 2026-11-21 15:30
+# Rapport de tests BDD — 2026-11-21 23:37
 
-*39 scénarios : 39 OK, 0 KO.*
+*47 scénarios : 47 OK, 0 KO.*
 
 ## Clignement des yeux — Clignement régulier sur 30 secondes — OK
 
@@ -13,6 +13,18 @@
 ## Cycle de sommeil — Endormissement et réveil — OK
 
 ![Endormissement et réveil](Cycle_de_sommeil_Endormissement_et_réveil_1.png)
+
+## Enrôlement du wake word — Calibration locale prioritaire — OK
+
+## Enrôlement du wake word — Choix du premier candidat franc — OK
+
+## Enrôlement du wake word — Découpe au dernier épisode — OK
+
+## Enrôlement du wake word — Échec sans prise — OK
+
+## Enrôlement du wake word — Le wizard suit les phases — OK
+
+## Enrôlement du wake word — Prises franches reconnues — OK
 
 ## Expressions du visage — Emotion inconnue ignorée (nimportequoi) — OK
 
@@ -78,6 +90,8 @@
 
 ## Mise à jour depuis le NAS — Paquet corrompu refusé — OK
 
+## Mise à jour depuis le NAS — Points animés pendant l'installation — OK
+
 ## Mise à jour depuis le NAS — Tap hors des yeux ignoré — OK
 
 ## Mise à jour depuis le NAS — Tap sur l'icône affiche la confirmation — OK
@@ -94,11 +108,13 @@
 
 ![Saccades régulières sur 30 secondes](Regard_de_surveillance_Saccades_régulières_sur_30_secondes_1.png)
 
-## Session Live — Bruit bref et silence ignorés — OK
+## Session Live — Bruit bref sans fin de phrase, silence streamé — OK
 
 ## Session Live — Connexion live impossible — OK
 
 ## Session Live — Interruption vide le haut-parleur — OK
+
+## Session Live — Le modèle peut terminer la discussion — OK
 
 ## Session Live — Le robot joue un son sur demande outil — OK
 

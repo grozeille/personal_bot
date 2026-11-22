@@ -17,6 +17,7 @@ public sealed class LiveSteps
     private readonly List<string> _said = new();
     private readonly List<string> _sounds = new();
     private readonly List<bool> _speaking = new();
+    private readonly List<string> _logs = new();
     private bool _cancelAfterInterrupt;
     private bool _finished;
     private List<string> _sentWhileSpeaking = new();
@@ -69,6 +70,14 @@ public sealed class LiveSteps
         _socket.Script("""{"setupComplete":{}}""");
     }
 
+    [Given("un serveur live qui termine la discussion")]
+    public void GivenTermine()
+    {
+        _socket.Script(
+            """{"setupComplete":{}}""",
+            """{"toolCall":{"functionCalls":[{"id":"c5","name":"end_conversation"}]}}""");
+    }
+
     [Given("un serveur live injoignable")]
     public void GivenInjoignable() => _socket.FailConnect = true;
 
@@ -96,7 +105,7 @@ public sealed class LiveSteps
                 OnGlow: _ => { },
                 OnGesture: _ => { },
                 OnUserSpeech: () => { },
-                OnLog: _ => { }),
+                OnLog: msg => _logs.Add(msg)),
             idleTimeout: TimeSpan.FromMilliseconds(300),
             turnTimeout: TimeSpan.FromMilliseconds(150));
         Task run = session.RunAsync(cts.Token);
@@ -221,17 +230,27 @@ public sealed class LiveSteps
         Assert.Contains(_socket.Sent, json => json.Contains("\"c7\""));
     }
 
+    [Then("la discussion se termine après réponse au tool")]
+    public void ThenDiscussionTerminee()
+    {
+        Assert.True(_finished);
+        Assert.Contains(_socket.Sent, json => json.Contains("\"c5\""));
+        Assert.Contains(_logs, log => log.Contains("fin de discussion demandée"));
+        Assert.DoesNotContain(_logs, log => log.Contains("silence prolongé"));
+    }
+
     [Then("aucune fin de phrase n'est envoyée pour un bruit")]
     public void ThenPasDeTour()
     {
         Assert.DoesNotContain(_socket.Sent, IsBareTurnComplete);
     }
 
-    [Then("le silence prolongé n'est pas streamé")]
-    public void ThenSilenceCoupe()
+    [Then("le silence prolongé est streamé")]
+    public void ThenSilenceStreame()
     {
+        // Flux continu exigé par le serveur : 2 forts + 10 silences = 12 envois.
         long audioSent = _socket.Sent.Count(json => json.Contains("realtimeInput"));
-        Assert.InRange(audioSent, 2, 11);
+        Assert.Equal(12, audioSent);
     }
 
     [Then("rien n'est envoyé")]
@@ -303,11 +322,13 @@ public sealed class LiveSteps
         _finished = true;
     }
 
-    [Then("rien du micro n'est envoyé pendant la parole du robot")]
-    public void ThenSourdPendantParole()
+    [Then("seul du silence est envoyé pendant la parole du robot")]
+    public void ThenSilencePendantParole()
     {
         Assert.True(_finished);
-        Assert.Empty(_sentWhileSpeaking);
+        List<string> audios = _sentWhileSpeaking.Where(json => json.Contains("realtimeInput")).ToList();
+        Assert.Equal(5, audios.Count);
+        Assert.All(audios, json => Assert.True(IsSilenceAudio(json)));
     }
 
     [Then("l'écho n'arme pas la fin de phrase")]
@@ -350,4 +371,23 @@ public sealed class LiveSteps
 
     private static bool IsBareTurnComplete(string json) =>
         json.Contains("\"turnComplete\":true") && !json.Contains("\"turns\"");
+
+    private static bool IsSilenceAudio(string json)
+    {
+        if (!json.Contains("realtimeInput"))
+        {
+            return false;
+        }
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            string? data = doc.RootElement
+                .GetProperty("realtimeInput").GetProperty("audio").GetProperty("data").GetString();
+            return data is not null && Convert.FromBase64String(data).All(b => b == 0);
+        }
+        catch
+        {
+            return false;
+        }
+    }
 }

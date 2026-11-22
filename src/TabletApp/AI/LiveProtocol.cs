@@ -117,6 +117,11 @@ internal static class LiveProtocol
                                 name = "play_fart",
                                 description = "Joue un prout, sans parler.",
                                 behavior = "NON_BLOCKING",
+                            },
+                            new
+                            {
+                                name = "end_conversation",
+                                description = "Termine la discussion quand l'enfant dit au revoir ou demande d'arreter.",
                             }
                         },
                     },

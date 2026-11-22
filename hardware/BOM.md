@@ -9,7 +9,7 @@ Vignettes cliquables = lien d'achat Amazon.ca (ou recherche si pas de fiche).
 | Image | Pièce | Spec | Qté | Prix indicatif | Note |
 |---|---|---|---|---|---|
 | <a href="https://www.amazon.ca/s?k=MG996R+servo+metal+180"><img src="img/mg996r.webp" width="140"></a> | Servo Pan + Roll | MG996R, couple ~10 kg·cm, pignons métal | 2 | ~14 $/pc | Miuzei validé (180°, métal) ; palonniers plastiques inclus ; prévoir palonniers alu 25T séparés |
-| <a href="https://www.amazon.ca/dp/B0769DFJVK"><img src="img/ds3218.jpg" width="140"></a> | Servo Tilt | DS3218, couple ~20 kg·cm, pignons métal | 1 | 22,99 $ | Plus fort : il porte la tablette en porte-à-faux ; prendre la version 180° (pas 270°) |
+| <a href="https://www.amazon.ca/dp/B0CCXRCFK4"><img src="img/ds3218.jpg" width="140"></a> | Servo Tilt | Wishiot RDS3218 270° waterproof + étrier U, 40×20×40 mm, 60 g, 21,5 kg·cm @5 V, 25T | 1 | prix à confirmer | Étrier U inclus (tilt symétrique, kit b) ; 270° (butées soft conservées) |
 | <a href="https://www.amazon.ca/dp/B014KTSMLA"><img src="img/pca9685.jpg" width="140"></a> | Contrôleur PWM | PCA9685 16 canaux, I2C | 1 | 15,98 $ | SDA/SCL/3.3V/GND vers le Pi (SUNFOUNDER sur amazon.ca) |
 | — | Raspberry Pi | Pi 1 Model B Rev 2 (vérifié, EN STOCK) | 1 | 0 (stock) | Serveur Go (#28), pas d'achat ; SD 4 Go serrée, 16 Go conseillées |
 | <a href="https://www.amazon.ca/dp/B09JW28WQC"><img src="img/alim.jpg" width="140"></a> | Alim servos | 5 V / 4 A minimum, jack ou bornier | 1 | ~20 $ | Ligne séparée du Pi (jamais le 5V du Pi pour les servos) |

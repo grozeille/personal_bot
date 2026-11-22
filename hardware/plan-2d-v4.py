@@ -1,5 +1,5 @@
 """Plan 2D v4 : kit reel photo (U interieur 52, pattes 48, trous 10mm),
-tilt config R_y(-90) type photo, mur oreille, pince a machoires. TOTAL 275.
+tilt config R_y(-90) type photo, mur oreille, pince X ressort. TOTAL 275.
 Unites mm. A valider au pied a coulisse sur kit recu."""
 from PIL import Image, ImageDraw, ImageFont
 
@@ -84,9 +84,9 @@ txt(OX, 40, 128, "oreilles haut/bas")
 # axe TILT
 d.line([(X(-34, OX), Z(113)), (X(34, OX), Z(113))], fill=C["axis"], width=1)
 txt(OX, -75, 117, "axe TILT", color=C["axis"])
-# pince + tablette
-rect(OX, -34, 121, -31, 145, fill=C["sup"])
-rect(OX, -40, 139, -20, 159, fill=C["sup"]); rect(OX, 20, 139, 40, 159, fill=C["sup"])
+# pince X + tablette : 4 crochets sur bords, rotule + base 1/4 sous le centre
+rect(OX, -46, 139, -33, 152, fill=C["sup"]); rect(OX, 33, 139, 46, 152, fill=C["sup"])
+rect(OX, -46, 268, -33, 281, fill=C["sup"]); rect(OX, 33, 268, 46, 281, fill=C["sup"])
 rect(OX, -108, 145, 108, 275, fill=(40, 40, 45))
 rect(OX, -98, 155, 98, 265, fill=C["screen"])
 for ex in (-50, 50):
@@ -95,7 +95,9 @@ for ex in (-50, 50):
 d.ellipse([X(-4, OX), Z(272), X(4, OX), Z(264)], fill="black")
 d.rectangle([X(-12, OX), Z(164), X(12, OX), Z(158)], fill=(230, 230, 230))
 txt(OX, 112, 200, "Dell 216x130")
-txt(OX, 44, 142, "pince")
+txt(OX, 44, 142, "pince X")
+d.ellipse([X(-11, OX), Z(171), X(11, OX), Z(149)], outline=C["sup"], width=2)
+txt(OX, 112, 162, "rotule (cachee)")
 # axe PAN
 d.line([(X(0, OX), Z(0)), (X(0, OX), Z(145))], fill=C["axis"], width=1)
 txt(OX, -42, 148, "axe PAN", color=C["axis"])
@@ -125,7 +127,13 @@ txt(OX2, -135, 80, "mur")
 bolt(OX2, 0, 77.5, fill=C["gold"])
 d.ellipse([X(-12, OX2), Z(125), X(12, OX2), Z(101)], outline=C["horn"], width=2)
 bolt(OX2, 0, 113, fill=C["horn"])
-rect(OX2, -30, 137, 30, 145, fill=C["sup"])
+rect(OX2, -20, 155, -2, 185, fill=C["sup"])
+rect(OX2, -20, 170, -11, 250, fill=C["sup"])
+rect(OX2, -20, 137, 14, 152, fill=C["sup"])
+rect(OX2, -20, 268, 14, 283, fill=C["sup"])
+d.ellipse([X(-26, OX2), Z(171), X(-4, OX2), Z(149)], outline=C["sup"], width=2)
+rect(OX2, -31, 132, 1, 142, fill=C["sup"])
+txt(OX2, 20, 160, "rotule")
 rect(OX2, -7, 145, 7, 275, fill=(40, 40, 45))
 d.line([(X(7, OX2), Z(155)), (X(7, OX2), Z(265))], fill=C["screen"], width=4)
 txt(OX2, 12, 205, "ecran (+Y)")

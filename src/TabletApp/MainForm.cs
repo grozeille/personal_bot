@@ -116,6 +116,11 @@ internal sealed class MainForm : Form
                 // Dev : forcer une vérification de maj (le robot le fait seul toutes les 5 min).
                 _ = CheckForUpdatesAsync();
             }
+            else if (e.KeyCode == Keys.E)
+            {
+                // Enrôlement : recalibrer le wake word sur la voix.
+                _ = RunEnrollAsync();
+            }
             else if (e.KeyCode == Keys.C)
             {
                 _confirm.Cancel();
@@ -171,6 +176,10 @@ internal sealed class MainForm : Form
             _ = CheckForUpdatesAsync();
             PromptApiKeyIfMissing();
             StartWakeWord();
+            if (!WakeEnrollment.IsCalibrated() && WakeWordOptions.Load().AutoEnroll)
+            {
+                _ = RunEnrollAsync();
+            }
             if (Program.AutoHeadTest)
             {
                 _ = RunHeadTestAsync();
@@ -283,11 +292,14 @@ internal sealed class MainForm : Form
     private async Task DownloadAndApplyAsync()
     {
         _applying = true;
+        RobotExpression previous = _confirm.Previous;
         _confirm.Cancel();
-        _face.SetExpression(_confirm.Previous);
+        _face.BusyDots = true;
         await _updater.DownloadAndApplyAsync().ConfigureAwait(true);
         // Succès = Velopack a relancé l'app (on ne revient pas ici).
-        // Échec = la maj reste proposée.
+        // Échec = on restaure le visage, la maj reste proposée.
+        _face.BusyDots = false;
+        _face.SetExpression(previous);
         UpdateFaceIcon();
         _applying = false;
     }
@@ -348,6 +360,91 @@ internal sealed class MainForm : Form
         finally
         {
             _face.Concentrated = false;
+            _wake?.Start();
+            _voiceRunning = false;
+        }
+    }
+
+    /// <summary>
+    /// Enrôlement (1er lancement sans calibration, touche E, flag --enroll) :
+    /// le robot se présente et calibre le wake word sur la voix (prises
+    /// parlées + sweep offline). Micro wake libéré pendant, comme le test voix.
+    /// </summary>
+    private async Task RunEnrollAsync()
+    {
+        if (_voiceRunning || _chatRunning)
+        {
+            return;
+        }
+        _voiceRunning = true;
+        _face.Concentrated = true;
+        _wake?.Stop();
+        RobotExpression previous = _face.CurrentExpression;
+        try
+        {
+            string key = GeminiKey.Resolve()
+                ?? throw new InvalidOperationException("Clé Gemini manquante.");
+            var speech = new GeminiSpeech(key);
+            WakeEnrollment.EnrollPhase enrollPhase = WakeEnrollment.EnrollPhase.Ambient;
+            await WakeEnrollment.RunWizardAsync(
+                (text, ct) => SpeakAsync(speech, text, ct),
+                async (seconds, ct) =>
+                {
+                    // Halo seulement pour les prises (pas le silence ambiant).
+                    bool halo = enrollPhase == WakeEnrollment.EnrollPhase.Takes;
+                    if (halo)
+                    {
+                        Ui(() => _face.Glow = VoiceGlow.Listening);
+                    }
+                    try
+                    {
+                        return await NAudioVoice.RecordAsync(TimeSpan.FromSeconds(seconds), ct);
+                    }
+                    finally
+                    {
+                        if (halo)
+                        {
+                            Ui(() => _face.Glow = VoiceGlow.None);
+                        }
+                    }
+                },
+                (wav, ct) => speech.TranscribeAsync(wav, ct),
+                VoiceLog.Info,
+                phase => Ui(() =>
+                {
+                    enrollPhase = phase;
+                    switch (phase)
+                    {
+                        case WakeEnrollment.EnrollPhase.Thinking:
+                            _face.SetExpression(RobotExpression.Thinking);
+                            _face.Glow = VoiceGlow.Thinking;
+                            break;
+                        case WakeEnrollment.EnrollPhase.DoneOk:
+                            _face.SetExpression(RobotExpression.Happy);
+                            _face.Glow = VoiceGlow.None;
+                            break;
+                        case WakeEnrollment.EnrollPhase.DoneKo:
+                            _face.SetExpression(previous);
+                            _face.Glow = VoiceGlow.None;
+                            break;
+                    }
+                }),
+                CalibrationPaths.Default,
+                CancellationToken.None);
+            _face.SetExpression(previous);
+        }
+        catch (Exception ex)
+        {
+            VoiceLog.Error(ex.Message);
+            _ = PlaySoundAsync("erreur");
+            _face.SetExpression(RobotExpression.Dead);
+            await Task.Delay(TimeSpan.FromSeconds(2));
+            _face.SetExpression(previous);
+        }
+        finally
+        {
+            _face.Concentrated = false;
+            _face.Glow = VoiceGlow.None;
             _wake?.Start();
             _voiceRunning = false;
         }
@@ -658,7 +755,7 @@ internal sealed class MainForm : Form
             _confirm.Show(_face.CurrentExpression, ConfirmPurpose.Update);
             _face.SetExpression(RobotExpression.Confirm);
         }
-        else if (!_chatRunning && !_voiceRunning)
+        else if (!_chatRunning && !_voiceRunning && !_applying)
         {
             // Tap sur le visage (pas de clavier sur tablette) : discuter.
             // Ne coupe jamais une session en cours (sinon l'enfant l'arrêterait

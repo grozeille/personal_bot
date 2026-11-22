@@ -19,7 +19,7 @@ Fonctionnalité: Session Live
   Scénario: Le robot sourd pendant sa propre parole
     Soit un serveur live qui parle puis termine son tour
     Quand la session live tourne en semi-duplex
-    Alors rien du micro n'est envoyé pendant la parole du robot
+    Alors seul du silence est envoyé pendant la parole du robot
     Et l'écho n'arme pas la fin de phrase
     Et le micro repart après une vraie parole
 
@@ -38,8 +38,13 @@ Fonctionnalité: Session Live
     Quand la session live se déroule
     Alors le prout est joué et la voix du robot est coupée
 
-  Scénario: Bruit bref et silence ignorés
+  Scénario: Bruit bref sans fin de phrase, silence streamé
     Soit un serveur live silencieux
     Quand le micro capte un bruit bref puis le silence
     Alors aucune fin de phrase n'est envoyée pour un bruit
-    Et le silence prolongé n'est pas streamé
+    Et le silence prolongé est streamé
+
+  Scénario: Le modèle peut terminer la discussion
+    Soit un serveur live qui termine la discussion
+    Quand la session live se déroule
+    Alors la discussion se termine après réponse au tool

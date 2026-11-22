@@ -130,4 +130,35 @@ internal sealed class SimulatedUpdate
         }
         return false;
     }
+
+    /// <summary>
+    /// Vrai si la zone centrale (sans yeux ni bouche) contient du cyan
+    /// (les points d'attente), à l'instant t avec busyDots.
+    /// </summary>
+    public static bool BusyDotsVisibleOffscreen(double timeSeconds) =>
+        BusyDotPixels(timeSeconds) > 50;
+
+    /// <summary>Compte les pixels cyan dans la zone des points d'attente.</summary>
+    public static int BusyDotPixels(double timeSeconds)
+    {
+        using var bitmap = new SKBitmap(800, 600);
+        using var canvas = new SKCanvas(bitmap);
+        FacePainter.DrawFace(
+            canvas, 800, 600, 1.0, 0, 0, 0, timeSeconds,
+            RobotExpression.Neutral, RobotExpression.Neutral, 1.0, awake: true,
+            busyDots: true);
+        int count = 0;
+        for (int y = 320; y < 350; y++)
+        {
+            for (int x = 350; x < 450; x++)
+            {
+                SKColor p = bitmap.GetPixel(x, y);
+                if (p.Red is >= 100 and < 180 && p.Green > 180 && p.Blue > 180)
+                {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
 }

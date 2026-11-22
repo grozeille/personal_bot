@@ -51,15 +51,37 @@ internal static class FacePainter
         return ((x - ox) / scale, (y - oy) / scale);
     }
 
+    /// <summary>Nombre de points d'attente (1-2-3 en boucle, 400 ms par cran).</summary>
+    internal static int BusyDotCount(double timeSeconds) =>
+        1 + ((int)(timeSeconds / 0.4) % 3);
+
+    /// <summary>Points d'attente centrés à la place du visage (mise à jour).</summary>
+    private static void DrawBusyDots(SKCanvas canvas, int width, int height, double timeSeconds)
+    {
+        string dots = new('.', BusyDotCount(timeSeconds));
+        using var font = new SKFont { Size = height * 0.22f };
+        using var paint = new SKPaint
+        {
+            Color = new SKColor(142, 220, 233),
+            IsAntialias = true,
+        };
+        canvas.DrawText(dots, width / 2f, height / 2f + height * 0.08f, SKTextAlign.Center, font, paint);
+    }
+
     public static void DrawFace(
         SKCanvas canvas, int width, int height,
         double openAmount, double gazeX, double gazeY,
         double yawn, double timeSeconds,
         RobotExpression expression, RobotExpression previous, double progress,
         MouthOverride? mouthOverride = null, bool awake = true, bool enableGlow = true,
-        bool updateAvailable = false, VoiceGlow glow = VoiceGlow.None)
+        bool updateAvailable = false, VoiceGlow glow = VoiceGlow.None, bool busyDots = false)
     {
         canvas.Clear(SKColors.Black);
+        if (busyDots)
+        {
+            DrawBusyDots(canvas, width, height, timeSeconds);
+            return;
+        }
         var face = SvgFaceLoader.For(expression);
 
         float scale = Math.Min(width / ViewW, height / ViewH);
