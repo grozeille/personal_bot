@@ -1,4 +1,5 @@
 using Reqnroll;
+using TabletApp;
 using TabletApp.AI;
 using TabletApp.UI;
 using Xunit;
@@ -92,6 +93,60 @@ public sealed class ConversationSteps
             .Where(s => s.Heard is not null && s.Sound is not null)
             .Select(s => s.Sound!);
         Assert.Equal(expected, _sounds);
+    }
+
+    [When("un tour est annulé pendant la réflexion")]
+    public async Task WhenTourAnnule()
+    {
+        var heard = new Queue<string?>(new[] { "salut", null, null });
+        var thinkStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var chat = new Conversation(
+            (_, _) => Task.FromResult(heard.Count > 0 ? heard.Dequeue() : null),
+            async (_, _, ct) =>
+            {
+                thinkStarted.TrySetResult();
+                await Task.Delay(Timeout.Infinite, ct);
+                return ((string?)null, (string?)null, (string?)null);
+            },
+            (text, _) =>
+            {
+                _spoken.Add(text);
+                return Task.CompletedTask;
+            },
+            expr => _faces.Add(expr),
+            listenFor: TimeSpan.FromMilliseconds(20));
+        Task run = chat.RunAsync(RobotExpression.Neutral, CancellationToken.None);
+        await thinkStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        chat.CancelTurn();
+        await run.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    [Then("la réplique annulée n'est pas dite et la discussion continue")]
+    public void ThenTourAnnule()
+    {
+        Assert.Equal(new[] { Conversation.Greeting, Conversation.Goodbye }, _spoken);
+    }
+
+    private readonly List<(VoiceGlow Glow, bool Speaking, string Expected)> _taps = new();
+
+    [When("on route des taps :")]
+    public void WhenRouteTaps(Table table)
+    {
+        foreach (var row in table.Rows)
+        {
+            _taps.Add((Enum.Parse<VoiceGlow>(row["halo"]), row["parle"] == "oui", row["action"]));
+        }
+    }
+
+    [Then("les actions sont correctes")]
+    public void ThenTapActions()
+    {
+        foreach ((VoiceGlow glow, bool speaking, string expected) in _taps)
+        {
+            string actual = MainForm.ConversationTap(glow, speaking)
+                == MainForm.ConversationTapAction.BackToListening ? "écoute" : "fin";
+            Assert.Equal(expected, actual);
+        }
     }
 
     private static string? EmptyToNull(string value) =>

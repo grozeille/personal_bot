@@ -93,6 +93,13 @@ internal sealed class SimulatedEnroll
     public bool TranscriptsOk() =>
         Transcripts.All(t => WakeEnrollment.IsCleanTake(t.Text) == t.Expected);
 
+    public bool PromptsMapped { get; private set; }
+
+    public void ResolvePrompts() =>
+        PromptsMapped = WakeEnrollment.Prompts.Length == 8
+            && WakeEnrollment.Prompts.All(p => WakeEnrollment.PromptAssetName(p.Text) == p.Name + ".wav")
+            && WakeEnrollment.PromptAssetName("J'ai entendu x, on recommence...") is null;
+
     public List<string> Phases { get; } = new();
 
     public async Task RunWizardFakeAsync()

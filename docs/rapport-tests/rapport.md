@@ -1,6 +1,6 @@
-# Rapport de tests BDD — 2026-11-21 23:37
+# Rapport de tests BDD — 2026-11-22 09:42
 
-*47 scénarios : 47 OK, 0 KO.*
+*53 scénarios : 53 OK, 0 KO.*
 
 ## Clignement des yeux — Clignement régulier sur 30 secondes — OK
 
@@ -17,6 +17,8 @@
 ## Enrôlement du wake word — Calibration locale prioritaire — OK
 
 ## Enrôlement du wake word — Choix du premier candidat franc — OK
+
+## Enrôlement du wake word — Consignes pré-synthétisées résolues — OK
 
 ## Enrôlement du wake word — Découpe au dernier épisode — OK
 
@@ -114,15 +116,21 @@
 
 ## Session Live — Interruption vide le haut-parleur — OK
 
+## Session Live — Le modèle peut demander une calibration — OK
+
 ## Session Live — Le modèle peut terminer la discussion — OK
 
 ## Session Live — Le robot joue un son sur demande outil — OK
 
 ## Session Live — Le robot sourd pendant sa propre parole — OK
 
+## Session Live — Long monologue découpé en tours — OK
+
 ## Session Live — Prout demandé joue un son au lieu de la voix — OK
 
 ## Session Live — Session live complète avec émotion — OK
+
+## Session Live — Tap pendant la réponse revient à l'écoute — OK
 
 ## Test voix — Bonjour entendu affiche le cœur — OK
 
@@ -131,4 +139,8 @@
 ## Test voix — Émotion inconnue ignorée en discussion — OK
 
 ## Test voix — Salut entendu n'affiche pas le cœur — OK
+
+## Test voix — Tap pendant la réflexion revient à l'écoute — OK
+
+## Test voix — Tap routé selon l'état visible — OK
 

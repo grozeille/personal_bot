@@ -178,23 +178,33 @@ internal static class WakeEnrollment
             try
             {
                 WriteKeywordsNoBom(batch, batchLines);
-                for (int t = 0; t < takes.Count; t++)
+                if (!SherpaWakeDetector.TryCreate(threshold, Score, out SherpaWakeDetector? detector, batch)
+                    || detector is null)
                 {
-                    foreach (string label in FeedFull(batch, takes[t], threshold))
+                    continue;
+                }
+                using (detector)
+                {
+                    for (int t = 0; t < takes.Count; t++)
                     {
-                        CandidateScore? hit = scores.FirstOrDefault(s => s.Label == label);
-                        if (hit is not null)
+                        detector.Reset();
+                        foreach (string label in FeedTake(detector, takes[t]))
                         {
-                            hit.TakeHits[t] = true;
+                            CandidateScore? hit = scores.FirstOrDefault(s => s.Label == label);
+                            if (hit is not null)
+                            {
+                                hit.TakeHits[t] = true;
+                            }
                         }
                     }
-                }
-                foreach (string label in FeedFull(batch, silence, threshold))
-                {
-                    int at = scores.FindIndex(s => s.Label == label);
-                    if (at >= 0)
+                    detector.Reset();
+                    foreach (string label in FeedTake(detector, silence))
                     {
-                        scores[at] = scores[at] with { SilenceHit = true };
+                        int at = scores.FindIndex(s => s.Label == label);
+                        if (at >= 0)
+                        {
+                            scores[at] = scores[at] with { SilenceHit = true };
+                        }
                     }
                 }
             }
@@ -231,13 +241,23 @@ internal static class WakeEnrollment
             try
             {
                 WriteKeywordsNoBom(solo, new[] { cand.Line });
-                bool[] hits = new bool[takes.Count];
-                for (int t = 0; t < takes.Count; t++)
+                if (!SherpaWakeDetector.TryCreate(threshold, Score, out SherpaWakeDetector? detector, solo)
+                    || detector is null)
                 {
-                    hits[t] = FeedFull(solo, takes[t], threshold).Count > 0;
+                    continue;
                 }
-                bool sil = FeedFull(solo, silence, threshold).Count > 0;
-                rescored.Add(new CandidateScore(cand.Label, cand.Line, hits, sil));
+                using (detector)
+                {
+                    bool[] hits = new bool[takes.Count];
+                    for (int t = 0; t < takes.Count; t++)
+                    {
+                        detector.Reset();
+                        hits[t] = FeedTake(detector, takes[t]).Count > 0;
+                    }
+                    detector.Reset();
+                    bool sil = FeedTake(detector, silence).Count > 0;
+                    rescored.Add(new CandidateScore(cand.Label, cand.Line, hits, sil));
+                }
             }
             finally
             {
@@ -258,16 +278,35 @@ internal static class WakeEnrollment
         IReadOnlyList<float[]> takes, float[] silence,
         Action<string>? log, CancellationToken ct)
     {
-        bool[] hits = new bool[takes.Count];
-        for (int t = 0; t < takes.Count; t++)
+        string solo = Path.Combine(Path.GetTempPath(), $"enroll-live-{Guid.NewGuid:N}.txt");
+        try
         {
-            ct.ThrowIfCancellationRequested();
-            hits[t] = await FeedLiveAsync(line, takes[t], threshold, gate, ct).ConfigureAwait(false);
+            WriteKeywordsNoBom(solo, new[] { line });
+            if (!SherpaWakeDetector.TryCreate(threshold, Score, out SherpaWakeDetector? detector, solo)
+                || detector is null)
+            {
+                return (new bool[takes.Count], false);
+            }
+            using (detector)
+            {
+                bool[] hits = new bool[takes.Count];
+                for (int t = 0; t < takes.Count; t++)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    detector.Reset();
+                    hits[t] = await FeedLiveStreamAsync(detector, takes[t], gate, ct).ConfigureAwait(false);
+                }
+                detector.Reset();
+                bool sil = await FeedLiveStreamAsync(detector, silence, gate, ct).ConfigureAwait(false);
+                log?.Invoke($"Live {LabelOf(line)} seuil={threshold} porte={gate} : " +
+                    $"{hits.Count(h => h)}/{takes.Count} + silence {(sil ? "TOUCHE" : "net")}.");
+                return (hits, sil);
+            }
         }
-        bool sil = await FeedLiveAsync(line, silence, threshold, gate, ct).ConfigureAwait(false);
-        log?.Invoke($"Live {LabelOf(line)} seuil={threshold} porte={gate} : " +
-            $"{hits.Count(h => h)}/{takes.Count} + silence {(sil ? "TOUCHE" : "net")}.");
-        return (hits, sil);
+        finally
+        {
+            File.Delete(solo);
+        }
     }
 
     /// <summary>
@@ -383,73 +422,54 @@ internal static class WakeEnrollment
         return at >= 0 ? line[(at + 1)..].Trim() : line.Trim();
     }
 
-    /// <summary>Rejoue un extrait en plein flux, retourne les labels touchés.</summary>
-    private static List<string> FeedFull(string keywordsPath, float[] samples, float threshold)
+    /// <summary>
+    /// Rejoue un extrait en plein flux sur un détecteur déjà ouvert
+    /// (l'appelant fait Reset() entre prises : le modèle reste chargé).
+    /// </summary>
+    private static List<string> FeedTake(SherpaWakeDetector detector, float[] samples)
     {
         var labels = new List<string>();
-        if (!SherpaWakeDetector.TryCreate(threshold, Score, out SherpaWakeDetector? detector, keywordsPath)
-            || detector is null)
+        const int frame = 1600;
+        for (int at = 0; at + frame <= samples.Length; at += frame)
         {
-            return labels;
-        }
-        using (detector)
-        {
-            const int frame = 1600;
-            for (int at = 0; at + frame <= samples.Length; at += frame)
+            float[] chunk = new float[frame];
+            Array.Copy(samples, at, chunk, 0, frame);
+            detector.Feed(chunk);
+            while (detector.TakeDetected())
             {
-                float[] chunk = new float[frame];
-                Array.Copy(samples, at, chunk, 0, frame);
-                detector.Feed(chunk);
-                while (detector.TakeDetected())
-                {
-                    labels.Add(detector.LastKeyword);
-                }
+                labels.Add(detector.LastKeyword);
             }
         }
         return labels;
     }
 
-    /// <summary>Rejoue un extrait en live (porte + temps réel), vrai si détecté.</summary>
-    private static async Task<bool> FeedLiveAsync(
-        string line, float[] samples, float threshold, double gate, CancellationToken ct)
+    /// <summary>
+    /// Rejoue un extrait en live (porte + temps réel) sur un détecteur déjà
+    /// ouvert (l'appelant fait Reset() entre prises : le modèle reste chargé).
+    /// </summary>
+    private static async Task<bool> FeedLiveStreamAsync(
+        SherpaWakeDetector detector, float[] samples, double gate, CancellationToken ct)
     {
-        string solo = Path.Combine(Path.GetTempPath(), $"enroll-live-{Guid.NewGuid:N}.txt");
-        try
+        using var listener = new WakeWordListener(detector, gateRms: gate, ownsDetector: false);
+        int fires = 0;
+        listener.Detected += () => fires++;
+        const int frame = 1600;
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        int fed = 0;
+        for (int at = 0; at + frame <= samples.Length; at += frame)
         {
-            WriteKeywordsNoBom(solo, new[] { line });
-            if (!SherpaWakeDetector.TryCreate(threshold, Score, out SherpaWakeDetector? detector, solo)
-                || detector is null)
+            ct.ThrowIfCancellationRequested();
+            float[] chunk = new float[frame];
+            Array.Copy(samples, at, chunk, 0, frame);
+            listener.OnAudio(chunk);
+            fed++;
+            int waitMs = fed * 100 - (int)watch.ElapsedMilliseconds;
+            if (waitMs > 0)
             {
-                return false;
-            }
-            using (detector)
-            {
-                using var listener = new WakeWordListener(detector, gateRms: gate);
-                int fires = 0;
-                listener.Detected += () => fires++;
-                const int frame = 1600;
-                var watch = System.Diagnostics.Stopwatch.StartNew();
-                int fed = 0;
-                for (int at = 0; at + frame <= samples.Length; at += frame)
-                {
-                    ct.ThrowIfCancellationRequested();
-                    float[] chunk = new float[frame];
-                    Array.Copy(samples, at, chunk, 0, frame);
-                    listener.OnAudio(chunk);
-                    fed++;
-                    int waitMs = fed * 100 - (int)watch.ElapsedMilliseconds;
-                    if (waitMs > 0)
-                    {
-                        await Task.Delay(waitMs, ct).ConfigureAwait(false);
-                    }
-                }
-                return fires > 0;
+                await Task.Delay(waitMs, ct).ConfigureAwait(false);
             }
         }
-        finally
-        {
-            File.Delete(solo);
-        }
+        return fires > 0;
     }
 
     /// <summary>Phases du wizard (le visage suit, la console ignore).</summary>
@@ -487,6 +507,50 @@ internal static class WakeEnrollment
         string clean = string.Join(" ", (heard ?? "").Split(
             new[] { ' ', '\n', '\r', '\t' }, StringSplitOptions.RemoveEmptyEntries));
         return clean.Length <= 60 ? clean : clean.Substring(0, 60) + "...";
+    }
+
+    /// <summary>
+    /// Consignes du wizard pré-synthétisées (zéro token, zéro latence, hors
+    /// ligne). La ligne dynamique ("J'ai entendu...") reste en TTS.
+    /// </summary>
+    internal static readonly (string Name, string Text)[] Prompts =
+    {
+        ("enroll-hello", "Bonjour, je m'appelle Patate ! Pour mieux te connaître, reste silencieux quelques secondes..."),
+        ("enroll-repeat", "Répète après moi : Hey, Patate !"),
+        ("enroll-again", "Encore une fois, Hey, Patate !"),
+        ("enroll-thinking", "Attends-moi, je réfléchis..."),
+        ("enroll-ok", "C'est bon, je te reconnaîtrai !"),
+        ("enroll-ko", "J'ai du mal à te reconnaître, je garde mes réglages de départ."),
+        ("enroll-unheard", "Je n'ai rien entendu, on recommence..."),
+        ("enroll-canthear", "J'ai du mal à t'entendre, je garde mes réglages de départ."),
+    };
+
+    internal static string PromptAudioDir =>
+        Path.Combine(AppContext.BaseDirectory, "Models", "audio");
+
+    /// <summary>Nom d'asset pour un texte de consigne, null si dynamique.</summary>
+    internal static string? PromptAssetName(string text)
+    {
+        foreach ((string name, string prompt) in Prompts)
+        {
+            if (prompt == text)
+            {
+                return name + ".wav";
+            }
+        }
+        return null;
+    }
+
+    /// <summary>Octets WAV pré-synthétisés, null si absent (repli TTS).</summary>
+    internal static byte[]? LoadPrompt(string text)
+    {
+        string? name = PromptAssetName(text);
+        if (name is null)
+        {
+            return null;
+        }
+        string path = Path.Combine(PromptAudioDir, name);
+        return File.Exists(path) ? File.ReadAllBytes(path) : null;
     }
 
     /// <summary>

@@ -48,3 +48,18 @@ Fonctionnalité: Session Live
     Soit un serveur live qui termine la discussion
     Quand la session live se déroule
     Alors la discussion se termine après réponse au tool
+
+  Scénario: Le modèle peut demander une calibration
+    Soit un serveur live qui demande une calibration
+    Quand la session live se déroule
+    Alors la calibration est demandée puis la session se termine
+
+  Scénario: Tap pendant la réponse revient à l'écoute
+    Soit un serveur live qui parle puis termine son tour
+    Quand la réponse est coupée par un tap
+    Alors la fin de réponse est ignorée et l'écoute reprend
+
+  Scénario: Long monologue découpé en tours
+    Soit un serveur live silencieux
+    Quand l'utilisateur parle sans s'arrêter
+    Alors une fin de phrase est forcée malgré la parole continue

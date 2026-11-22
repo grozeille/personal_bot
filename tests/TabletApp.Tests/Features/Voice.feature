@@ -36,3 +36,17 @@ Fonctionnalité: Test voix
     Quand la discussion se déroule
     Alors le robot salue, répond et dit au revoir
     Et les visages suivent le script
+
+  Scénario: Tap pendant la réflexion revient à l'écoute
+    Quand un tour est annulé pendant la réflexion
+    Alors la réplique annulée n'est pas dite et la discussion continue
+
+  Scénario: Tap routé selon l'état visible
+    Quand on route des taps :
+      | halo      | parle | action |
+      | Thinking  | non   | écoute |
+      | Listening | oui   | écoute |
+      | None      | oui   | écoute |
+      | Listening | non   | fin    |
+      | None      | non   | fin    |
+    Alors les actions sont correctes

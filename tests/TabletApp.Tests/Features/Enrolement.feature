@@ -42,3 +42,7 @@ Fonctionnalité: Enrôlement du wake word
       | Patate. Hé, patate. | 0      |
       | Hey potato          | 0      |
     Alors les verdicts sont corrects
+
+  Scénario: Consignes pré-synthétisées résolues
+    Quand on résout les consignes
+    Alors chaque consigne a un asset et l'inconnue n'en a pas

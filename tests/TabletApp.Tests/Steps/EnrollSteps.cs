@@ -72,6 +72,12 @@ public sealed class EnrollSteps
     [Then("les verdicts sont corrects")]
     public void ThenVerdicts() => Assert.True(_enroll.TranscriptsOk());
 
+    [When("on résout les consignes")]
+    public void WhenResout() => _enroll.ResolvePrompts();
+
+    [Then("chaque consigne a un asset et l'inconnue n'en a pas")]
+    public void ThenAssets() => Assert.True(_enroll.PromptsMapped);
+
     [When("on découpe une prise avec un clic initial")]
     public void WhenDecoupe() => _enroll.TrimSynthetic();
 

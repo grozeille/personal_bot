@@ -32,6 +32,9 @@ internal static class LiveProtocol
         "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent";
     internal const string Model = "models/gemini-3.8-live";
 
+    /// <summary>Langue imposée (transcription + réponses), sinon hallucinations (es/de).</summary>
+    internal const string LanguageCode = "fr-FR";
+
     public static string BuildSetup(string systemPrompt, IReadOnlyList<string> emotions, IReadOnlyList<string> sounds, IReadOnlyList<string> gestures) =>
         JsonSerializer.Serialize(new
         {
@@ -41,6 +44,10 @@ internal static class LiveProtocol
                 generationConfig = new
                 {
                     responseModalities = new[] { "AUDIO" },
+                    speechConfig = new
+                    {
+                        languageCode = LanguageCode,
+                    },
                 },
                 systemInstruction = new
                 {
@@ -122,6 +129,11 @@ internal static class LiveProtocol
                             {
                                 name = "end_conversation",
                                 description = "Termine la discussion quand l'enfant dit au revoir ou demande d'arreter.",
+                            },
+                            new
+                            {
+                                name = "run_calibration",
+                                description = "Relance la calibration du wake word quand on le demande.",
                             }
                         },
                     },

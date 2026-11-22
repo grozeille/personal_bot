@@ -18,6 +18,10 @@ public sealed class LiveSteps
     private readonly List<string> _sounds = new();
     private readonly List<bool> _speaking = new();
     private readonly List<string> _logs = new();
+    private readonly List<VoiceGlow> _glows = new();
+    private bool _calibrationRequested;
+    private bool _heardAfterInterrupt;
+    private bool _forcedTurn;
     private bool _cancelAfterInterrupt;
     private bool _finished;
     private List<string> _sentWhileSpeaking = new();
@@ -78,6 +82,14 @@ public sealed class LiveSteps
             """{"toolCall":{"functionCalls":[{"id":"c5","name":"end_conversation"}]}}""");
     }
 
+    [Given("un serveur live qui demande une calibration")]
+    public void GivenCalibre()
+    {
+        _socket.Script(
+            """{"setupComplete":{}}""",
+            """{"toolCall":{"functionCalls":[{"id":"c6","name":"run_calibration"}]}}""");
+    }
+
     [Given("un serveur live injoignable")]
     public void GivenInjoignable() => _socket.FailConnect = true;
 
@@ -105,7 +117,8 @@ public sealed class LiveSteps
                 OnGlow: _ => { },
                 OnGesture: _ => { },
                 OnUserSpeech: () => { },
-                OnLog: msg => _logs.Add(msg)),
+                OnLog: msg => _logs.Add(msg),
+                OnCalibrationRequested: () => _calibrationRequested = true),
             idleTimeout: TimeSpan.FromMilliseconds(300),
             turnTimeout: TimeSpan.FromMilliseconds(150));
         Task run = session.RunAsync(cts.Token);
@@ -149,7 +162,8 @@ public sealed class LiveSteps
         Assert.True(_finished);
         Assert.Contains(_socket.Sent, json =>
             json.Contains("models/gemini-3.8-live")
-            && json.Contains("set_emotion") && json.Contains("SYS"));
+            && json.Contains("set_emotion") && json.Contains("SYS")
+            && json.Contains("fr-FR"));
     }
 
     [Then("le robot salue, joue l'audio et répond au tool")]
@@ -237,6 +251,109 @@ public sealed class LiveSteps
         Assert.Contains(_socket.Sent, json => json.Contains("\"c5\""));
         Assert.Contains(_logs, log => log.Contains("fin de discussion demandée"));
         Assert.DoesNotContain(_logs, log => log.Contains("silence prolongé"));
+    }
+
+    [Then("la calibration est demandée puis la session se termine")]
+    public void ThenCalibrationDemandee()
+    {
+        Assert.True(_finished);
+        Assert.Contains(_socket.Sent, json => json.Contains("\"c6\""));
+        Assert.True(_calibrationRequested);
+        Assert.Contains(_logs, log => log.Contains("calibration demandée"));
+    }
+
+    [When("la réponse est coupée par un tap")]
+    public async Task WhenInterrompt()
+    {
+        using var cts = new CancellationTokenSource();
+        var session = new LiveSession(
+            "cle-fausse", "SYS", new[] { "happy" }, new[] { "giggle" }, new[] { "nod_yes" },
+            _socket, _mic, _player,
+            new LiveCallbacks(
+                OnEmotion: emotion => _emotions.Add(emotion),
+                OnSound: sound => _sounds.Add(sound),
+                OnHeardTranscript: text => _heard.Add(text),
+                OnRobotTranscript: text => _said.Add(text),
+                OnSpeaking: speaking => _speaking.Add(speaking),
+                OnGlow: glow => _glows.Add(glow),
+                OnGesture: _ => { },
+                OnUserSpeech: () => { },
+                OnLog: msg => _logs.Add(msg)),
+            idleTimeout: TimeSpan.FromSeconds(30),
+            turnTimeout: TimeSpan.FromMilliseconds(150));
+        Task run = session.RunAsync(cts.Token);
+        Assert.True(
+            await WaitForAsync(() => _player.Played.Count > 0, TimeSpan.FromSeconds(2)),
+            "Le robot aurait dû parler.");
+        session.InterruptToListening();
+        _socket.Script(
+            """{"serverContent":{"modelTurn":{"parts":[{"inlineData":{"mimeType":"audio/pcm;rate=24000","data":"QUI="}}]}}}""",
+            """{"serverContent":{"outputTranscription":{"text":"bla"},"turnComplete":true}}""");
+        await Task.Delay(300);
+        await Task.Delay(LiveSession.SpeakMuteTail + TimeSpan.FromMilliseconds(200));
+        byte[] loud = LoudChunk();
+        byte[] silence = new byte[320];
+        int mark = _socket.Sent.Count;
+        for (int i = 0; i < 5; i++)
+        {
+            _mic.Push(loud);
+        }
+        DateTime end = DateTime.UtcNow.AddSeconds(5);
+        while (!run.IsCompleted && DateTime.UtcNow < end
+            && !_socket.Sent.Skip(mark).Any(IsBareTurnComplete))
+        {
+            _mic.Push(silence);
+            await Task.Delay(50);
+        }
+        _heardAfterInterrupt = _socket.Sent.Skip(mark).Any(IsBareTurnComplete);
+        cts.Cancel();
+        await run;
+        _finished = true;
+    }
+
+    [Then("la fin de réponse est ignorée et l'écoute reprend")]
+    public void ThenReponseCoupee()
+    {
+        Assert.True(_finished);
+        Assert.Equal(new byte[] { 0x41, 0x42 }, _player.Played.ToArray());
+        Assert.Empty(_said);
+        Assert.Contains(_glows, glow => glow == VoiceGlow.Listening);
+        Assert.Equal(VoiceGlow.Listening, _glows[^2]);
+        Assert.True(_heardAfterInterrupt);
+    }
+
+    [When("l'utilisateur parle sans s'arrêter")]
+    public async Task WhenParleSansArret()
+    {
+        using var cts = new CancellationTokenSource();
+        var session = new LiveSession(
+            "cle-fausse", "SYS", new[] { "happy" }, new[] { "giggle" }, new[] { "nod_yes" },
+            _socket, _mic, _player,
+            new LiveCallbacks(_ => { }, _ => { }, _ => { }, _ => { }, _ => { }, _ => { }, _ => { }, () => { }, _ => { }),
+            idleTimeout: TimeSpan.FromSeconds(30),
+            turnTimeout: TimeSpan.FromSeconds(30),
+            maxTurnTimeout: TimeSpan.FromMilliseconds(300));
+        Task run = session.RunAsync(cts.Token);
+        byte[] loud = LoudChunk();
+        int mark = _socket.Sent.Count;
+        DateTime end = DateTime.UtcNow.AddSeconds(5);
+        while (!run.IsCompleted && DateTime.UtcNow < end
+            && !_socket.Sent.Skip(mark).Any(IsBareTurnComplete))
+        {
+            _mic.Push(loud);
+            await Task.Delay(50);
+        }
+        _forcedTurn = _socket.Sent.Skip(mark).Any(IsBareTurnComplete);
+        cts.Cancel();
+        await run;
+        _finished = true;
+    }
+
+    [Then("une fin de phrase est forcée malgré la parole continue")]
+    public void ThenTourForce()
+    {
+        Assert.True(_finished);
+        Assert.True(_forcedTurn);
     }
 
     [Then("aucune fin de phrase n'est envoyée pour un bruit")]

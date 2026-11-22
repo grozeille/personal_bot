@@ -163,6 +163,7 @@ internal sealed class WakeWordListener : IDisposable
     // à queue faible (« .o ») mouraient juste avant de matcher (U1).
     internal static readonly TimeSpan BridgeHangover = TimeSpan.FromMilliseconds(700);
     private readonly IWakeDetector _detector;
+    private readonly bool _ownsDetector;
     private readonly int _device;
     private readonly TimeSpan _quietHangover;
     private readonly object _sync = new();
@@ -178,9 +179,11 @@ internal sealed class WakeWordListener : IDisposable
     public event Action<WakeTick>? Tick;
     internal double GateRms => _gate * 32768.0;
     public WakeWordListener(
-        IWakeDetector detector, int deviceNumber = 0, TimeSpan? quietHangover = null, double gateRms = 150.0)
+        IWakeDetector detector, int deviceNumber = 0, TimeSpan? quietHangover = null, double gateRms = 150.0,
+        bool ownsDetector = true)
     {
         _detector = detector;
+        _ownsDetector = ownsDetector;
 
         _gate = gateRms / 32768.0;        _device = deviceNumber;
         // Un énoncé = parole + 700 ms de queue ; passé ce délai, stop + reset
@@ -309,6 +312,9 @@ internal sealed class WakeWordListener : IDisposable
         }
         _disposed = true;
         Stop();
-        _detector.Dispose();
+        if (_ownsDetector)
+        {
+            _detector.Dispose();
+        }
     }
 }

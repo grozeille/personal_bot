@@ -42,7 +42,8 @@ internal sealed record LiveCallbacks(
     Action<bool> OnSpeaking,
     Action<TabletApp.UI.VoiceGlow> OnGlow,
     Action OnUserSpeech,
-    Action<string> OnLog);
+    Action<string> OnLog,
+    Action? OnCalibrationRequested = null);
 
 /// <summary>
 /// Session vocale Live : micro streamé, audio modèle joué, tools exécutés,
@@ -64,9 +65,11 @@ internal sealed class LiveSession
     private readonly LiveCallbacks _events;
     private readonly TimeSpan _idleTimeout;
     private readonly TimeSpan _turnTimeout;
+    private readonly TimeSpan _maxTurnTimeout;
 
     private readonly object _sync = new();
     private DateTime _lastSpeech = DateTime.UtcNow;
+    private DateTime _turnStartedAt = DateTime.UtcNow;
     private bool _wasSpeech;
     private DateTime _lastModelActivity = DateTime.MinValue;
     private bool _turnCompleteSent;
@@ -74,6 +77,7 @@ internal sealed class LiveSession
     private volatile bool _speaking;
     private DateTime _speakEndedAt = DateTime.MinValue;
     private volatile bool _mutedTurn;
+    private volatile bool _dropAudio;
     private int _speechChunks;
     private int _turnAudioChunks;
     private double _turnPeakRms;
@@ -82,7 +86,8 @@ internal sealed class LiveSession
     public LiveSession(
         string apiKey, string systemPrompt, IReadOnlyList<string> emotions, IReadOnlyList<string> sounds, IReadOnlyList<string> gestures,
         ILiveSocket socket, ILiveMic mic, ILivePlayer player,
-        LiveCallbacks events, TimeSpan? idleTimeout = null, TimeSpan? turnTimeout = null)
+        LiveCallbacks events, TimeSpan? idleTimeout = null, TimeSpan? turnTimeout = null,
+        TimeSpan? maxTurnTimeout = null)
     {
         _apiKey = apiKey;
         _systemPrompt = systemPrompt;
@@ -95,6 +100,7 @@ internal sealed class LiveSession
         _events = events;
         _idleTimeout = idleTimeout ?? TimeSpan.FromSeconds(60);
         _turnTimeout = turnTimeout ?? TimeSpan.FromMilliseconds(1200);
+        _maxTurnTimeout = maxTurnTimeout ?? TimeSpan.FromSeconds(12);
     }
 
     public async Task RunAsync(CancellationToken ct)
@@ -148,6 +154,28 @@ internal sealed class LiveSession
         catch (ObjectDisposedException)
         {
         }
+    }
+
+    /// <summary>
+    /// Tap : coupe la réponse en cours et revient à l'écoute, sans couper
+    /// la session. La fin du tour serveur est ignorée ; le prochain tour
+    /// utilisateur réarme normalement.
+    /// </summary>
+    public void InterruptToListening()
+    {
+        _player.Clear();
+        lock (_sync)
+        {
+            _speaking = false;
+            _speakEndedAt = DateTime.MinValue;
+            _dropAudio = true;
+            _lastModelActivity = DateTime.UtcNow;
+            _turnCompleteSent = false;
+            _speechChunks = 0;
+        }
+        _events.OnSpeaking(false);
+        _events.OnGlow(TabletApp.UI.VoiceGlow.Listening);
+        _events.OnLog("Live : réponse coupée, retour à l'écoute.");
     }
 
     private async Task WaitForSetupAsync(string setupJson, CancellationToken linked, CancellationToken user)
@@ -221,7 +249,7 @@ internal sealed class LiveSession
                     _events.OnGlow(TabletApp.UI.VoiceGlow.Thinking);
                     _events.OnLog($"Live : réponse vocale après {lag:F1} s.");
                 }
-                if (!_mutedTurn)
+                if (!_mutedTurn && !_dropAudio)
                 {
                     _player.PlayChunk(pcm);
                 }
@@ -237,7 +265,7 @@ internal sealed class LiveSession
                     _lastModelActivity = DateTime.UtcNow;
                     _turnCompleteSent = false;
                     _speechChunks = 0;                }
-                if (!_mutedTurn)
+                if (!_mutedTurn && !_dropAudio)
                 {
                     robotText.Append(said);
                 }
@@ -251,12 +279,18 @@ internal sealed class LiveSession
                     _speechChunks = 0;                }
             }
             bool endByTool = false;
+            bool calibrateByTool = false;
             foreach (LiveToolCall call in update.ToolCalls)
             {
                 if (call.Name == "end_conversation")
                 {
                     _events.OnLog("Live : fin de discussion demandée.");
                     endByTool = true;
+                }
+                if (call.Name == "run_calibration")
+                {
+                    _events.OnLog("Live : calibration demandée.");
+                    calibrateByTool = true;
                 }
                 if (call.Name == "set_emotion" && call.Emotion is { } feeling)
                 {
@@ -284,6 +318,12 @@ internal sealed class LiveSession
                 // Après l'acquittement : le "Bye !" déjà en file se joue.
                 RequestStop();
             }
+            if (calibrateByTool)
+            {
+                // Fin de session puis enrôlement (micro partagé : jamais en parallèle).
+                _events.OnCalibrationRequested?.Invoke();
+                RequestStop();
+            }
             if (update.CancelledIds.Count > 0)
             {
                 _events.OnLog($"Live : {update.CancelledIds.Count} appel(s) annulé(s).");
@@ -294,7 +334,9 @@ internal sealed class LiveSession
                 lock (_sync)
                 {
                     _speakEndedAt = DateTime.UtcNow;
-                    _mutedTurn = false;                }
+                    _mutedTurn = false;
+                    _dropAudio = false;
+                }
                 _speaking = false;
                 _events.OnSpeaking(false);
                 _events.OnGlow(TabletApp.UI.VoiceGlow.Listening);
@@ -302,14 +344,25 @@ internal sealed class LiveSession
             }
             if (update.TurnComplete)
             {
+                bool dropped;
                 lock (_sync)
                 {
                     _speakEndedAt = DateTime.UtcNow;
-                    _mutedTurn = false;                }
+                    _mutedTurn = false;
+                    dropped = _dropAudio;
+                    _dropAudio = false;
+                }
                 _speaking = false;
                 _events.OnSpeaking(false);
                 _events.OnGlow(TabletApp.UI.VoiceGlow.Listening);
-                FlushRobotText(robotText, coupé: false);
+                if (dropped)
+                {
+                    robotText.Clear();
+                }
+                else
+                {
+                    FlushRobotText(robotText, coupé: false);
+                }
             }
             if (update.GoAway)
             {
@@ -340,10 +393,15 @@ internal sealed class LiveSession
 
     internal static bool ShouldSendTurnComplete(
         bool sent, bool heardSpeech, DateTime lastSpeech, DateTime lastModel,
-        DateTime now, TimeSpan silence, int speechChunks, int minSpeechChunks)
+        DateTime now, TimeSpan silence, int speechChunks, int minSpeechChunks,
+        DateTime turnStarted, TimeSpan maxTurn)
     {
-        return !sent && heardSpeech && lastSpeech > lastModel && now - lastSpeech >= silence
-            && speechChunks >= minSpeechChunks;
+        if (sent || !heardSpeech || speechChunks < minSpeechChunks)
+        {
+            return false;
+        }
+        return (lastSpeech > lastModel && now - lastSpeech >= silence)
+            || now - turnStarted >= maxTurn;
     }
 
     /// <summary>Couture de diagnostic : injecte un chunk micro (outil --live-sim).</summary>
@@ -394,6 +452,10 @@ internal sealed class LiveSession
             {
                 if (speech)
                 {
+                    if (_speechChunks == 0)
+                    {
+                        _turnStartedAt = now;
+                    }
                     _lastSpeech = now;
                     _heardSpeech = true;
                     _speechChunks++;
@@ -416,10 +478,12 @@ internal sealed class LiveSession
             }
             else if (!muted && ShouldSendTurnComplete(
                 _turnCompleteSent, _heardSpeech, _lastSpeech, _lastModelActivity,
-                now, _turnTimeout, _speechChunks, MinSpeechChunks))
+                now, _turnTimeout, _speechChunks, MinSpeechChunks,
+                _turnStartedAt, _maxTurnTimeout))
             {
                 _turnCompleteSent = true;
                 _speechChunks = 0;
+                _dropAudio = false;
                 endTurn = true;
             }
         }

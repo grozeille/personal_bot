@@ -29,7 +29,7 @@ internal sealed class GeminiBrain
     };
 
     // Version du prompt : incrémenter à chaque modification du texte.
-    internal const string PromptVersion = "2026-11-22.1";
+    internal const string PromptVersion = "2026-11-22.3";
 
     internal const string DefaultPersonality =
         "Tu es Patate, un petit robot compagnon qui parle à un enfant de 7 ans. "
@@ -59,7 +59,7 @@ internal sealed class GeminiBrain
 
     internal static string BuildLivePrompt(string personality) => personality
         + " Tu parles à voix haute, naturellement, sans jamais lire de JSON. "
-        + "Quand ton humeur change, appelle l'outil set_emotion avec l'émotion adaptée. Pour jouer un son, appelle l'outil play_sound avec un des petits sons. Pour bouger la tete, appelle l'outil play_gesture avec un de : nod_yes, shake_no, tilt_curious, greet_wake, look_away_shy, excited_wiggle, sleepy_bow, listening, confused_scan, reset_neutral. Quand on te demande un prout, appelle play_fart et reste totalement silencieux (aucun mot). Quand l'enfant dit au revoir ou demande d'arrêter, dis Bye ! puis appelle l'outil end_conversation. Si tu n'entends que du bruit ou du silence, reste silencieux.";
+        + "Quand ton humeur change, appelle l'outil set_emotion avec l'émotion adaptée. Pour jouer un son, appelle l'outil play_sound avec un des petits sons. Pour bouger la tete, appelle l'outil play_gesture avec un de : nod_yes, shake_no, tilt_curious, greet_wake, look_away_shy, excited_wiggle, sleepy_bow, listening, confused_scan, reset_neutral. Quand on te demande un prout, appelle play_fart et reste totalement silencieux (aucun mot). Quand l'enfant dit au revoir ou demande d'arrêter, dis Bye ! puis appelle l'outil end_conversation. Quand on te demande de te calibrer ou de mieux reconnaître la voix, dis Je me recalibre ! puis appelle l'outil run_calibration. Si tu n'entends que du bruit ou du silence, reste totalement silencieux : ne prononce jamais les mots 'no speech'.";
 
     internal static (string Text, bool Custom) ResolvePersonality(string? configPath = null)
     {

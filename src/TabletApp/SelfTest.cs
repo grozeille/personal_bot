@@ -754,13 +754,16 @@ internal static class SelfTest
             && greeting.Contains("\"turnComplete\":true") && greeting.Contains("Salut");
         DateTime now = new(2026, 1, 1, 12, 0, 10, DateTimeKind.Utc);
         TimeSpan silence = TimeSpan.FromMilliseconds(1200);
-        bool fireOk = LiveSession.ShouldSendTurnComplete(false, true, now.AddSeconds(-2), DateTime.MinValue, now, silence, 4, 4)
-            && !LiveSession.ShouldSendTurnComplete(false, false, now.AddSeconds(-2), DateTime.MinValue, now, silence, 4, 4)
-            && !LiveSession.ShouldSendTurnComplete(true, true, now.AddSeconds(-2), DateTime.MinValue, now, silence, 4, 4)
-            && !LiveSession.ShouldSendTurnComplete(false, true, now.AddSeconds(-2), now.AddSeconds(-1), now, silence, 4, 4)
-            && !LiveSession.ShouldSendTurnComplete(false, true, now.AddMilliseconds(-500), DateTime.MinValue, now, silence, 4, 4)
+        TimeSpan maxTurn = TimeSpan.FromSeconds(12);
+        bool fireOk = LiveSession.ShouldSendTurnComplete(false, true, now.AddSeconds(-2), DateTime.MinValue, now, silence, 4, 4, now.AddSeconds(-2), maxTurn)
+            && !LiveSession.ShouldSendTurnComplete(false, false, now.AddSeconds(-2), DateTime.MinValue, now, silence, 4, 4, now.AddSeconds(-2), maxTurn)
+            && !LiveSession.ShouldSendTurnComplete(true, true, now.AddSeconds(-2), DateTime.MinValue, now, silence, 4, 4, now.AddSeconds(-2), maxTurn)
+            && !LiveSession.ShouldSendTurnComplete(false, true, now.AddSeconds(-2), now.AddSeconds(-1), now, silence, 4, 4, now.AddSeconds(-2), maxTurn)
+            && !LiveSession.ShouldSendTurnComplete(false, true, now.AddMilliseconds(-500), DateTime.MinValue, now, silence, 4, 4, now.AddMilliseconds(-500), maxTurn)
 
-            && !LiveSession.ShouldSendTurnComplete(false, true, now.AddSeconds(-2), DateTime.MinValue, now, silence, 3, 4);
+            && !LiveSession.ShouldSendTurnComplete(false, true, now.AddSeconds(-2), DateTime.MinValue, now, silence, 3, 4, now.AddSeconds(-2), maxTurn)
+            && LiveSession.ShouldSendTurnComplete(false, true, now.AddMilliseconds(-100), DateTime.MinValue, now, silence, 10, 4, now.AddSeconds(-13), maxTurn)
+            && !LiveSession.ShouldSendTurnComplete(false, true, now.AddMilliseconds(-100), DateTime.MinValue, now, silence, 10, 4, now.AddSeconds(-2), maxTurn);
         LiveServerUpdate done = LiveProtocol.ParseUpdate("{\"setupComplete\":{}}");
         LiveServerUpdate call = LiveProtocol.ParseUpdate(
             "{\"toolCall\":{\"functionCalls\":[{\"id\":\"c1\",\"name\":\"set_emotion\","
@@ -1641,7 +1644,9 @@ internal static class SelfTest
         async Task Speak(string text, CancellationToken ct)
         {
             Console.WriteLine($"Robot : {text}");
-            byte[] wav = await speech.SpeakAsync(text, ct).ConfigureAwait(false);
+            byte[]? asset = TabletApp.AI.WakeEnrollment.LoadPrompt(text);
+            byte[] wav = asset
+                ?? await speech.SpeakAsync(text, ct).ConfigureAwait(false);
             await TabletApp.AI.NAudioVoice.PlayAsync(wav, ct).ConfigureAwait(false);
         }
         Task<TabletApp.AI.VoiceClip> Record(int seconds, CancellationToken ct)

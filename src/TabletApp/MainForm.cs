@@ -36,6 +36,9 @@ internal sealed class MainForm : Form
     private bool _voiceRunning;
     private bool _chatRunning;
     private CancellationTokenSource? _chatCts;
+    private bool _pendingCalibration;
+    private LiveSession? _liveSession;
+    private Conversation? _conversation;
     private WakeWordListener? _wake;
 
     // Empêche la mise en veille de l'écran / du système (tête de robot allumée en continu).
@@ -548,8 +551,17 @@ internal sealed class MainForm : Form
                 OnSpeaking: speaking => Ui(() => _face.Speaking = speaking),
                 OnGlow: glow => Ui(() => _face.Glow = glow),
                 OnUserSpeech: () => Ui(() => _face.NotifyActivity()),
-                OnLog: VoiceLog.Info));
-        await session.RunAsync(ct);
+                OnLog: VoiceLog.Info,
+                OnCalibrationRequested: () => _pendingCalibration = true));
+        _liveSession = session;
+        try
+        {
+            await session.RunAsync(ct);
+        }
+        finally
+        {
+            _liveSession = null;
+        }
     }
 
     private async Task RunUnaryAsync(string key, RobotExpression previous, CancellationToken ct)
@@ -573,7 +585,46 @@ internal sealed class MainForm : Form
             (text, _) => SpeakAsync(speech, text, ct),
             expr => Ui(() => _face.SetExpression(expr)),
             playSound: (sound, _) => PlaySoundAsync(sound));
-        await chat.RunAsync(previous, ct);
+        _conversation = chat;
+        try
+        {
+            await chat.RunAsync(previous, ct);
+        }
+        finally
+        {
+            _conversation = null;
+        }
+    }
+
+    /// <summary>Tap pendant une discussion : retour écoute ou fin, selon l'état visible.</summary>
+    internal enum ConversationTapAction
+    {
+        BackToListening,
+        EndDiscussion,
+    }
+
+    internal static ConversationTapAction ConversationTap(VoiceGlow glow, bool speaking) =>
+        glow == VoiceGlow.Thinking || speaking
+            ? ConversationTapAction.BackToListening
+            : ConversationTapAction.EndDiscussion;
+
+    private void TapConversation()
+    {
+        if (!_chatRunning)
+        {
+            return;
+        }
+        if (ConversationTap(_face.Glow, _face.Speaking) == ConversationTapAction.BackToListening)
+        {
+            _liveSession?.InterruptToListening();
+            _conversation?.CancelTurn();
+            VoiceLog.Info("Tap : retour à l'écoute.");
+        }
+        else if (_chatCts is not null)
+        {
+            VoiceLog.Info("Tap : fin de discussion.");
+            _chatCts.Cancel();
+        }
     }
 
     private void Ui(Action action)
@@ -640,6 +691,11 @@ internal sealed class MainForm : Form
             _chatRunning = false;
             _chatCts?.Dispose();
             _chatCts = null;
+            if (_pendingCalibration)
+            {
+                _pendingCalibration = false;
+                _ = RunEnrollAsync();
+            }
         }
     }
 
@@ -667,8 +723,17 @@ internal sealed class MainForm : Form
         VoiceLog.Info($"Robot : {text}");
         Ui(() => _face.Glow = VoiceGlow.None);
         var watch = System.Diagnostics.Stopwatch.StartNew();
-        byte[] wav = await speech.SpeakAsync(text, ct);
-        VoiceLog.Info($"Synthèse : {watch.Elapsed.TotalSeconds:F1} s.");
+        byte[]? asset = WakeEnrollment.LoadPrompt(text);
+        byte[] wav;
+        if (asset is not null)
+        {
+            wav = asset;
+        }
+        else
+        {
+            wav = await speech.SpeakAsync(text, ct);
+            VoiceLog.Info($"Synthèse : {watch.Elapsed.TotalSeconds:F1} s.");
+        }
         watch.Restart();
         Ui(() => _face.Speaking = true);
         try
@@ -755,11 +820,15 @@ internal sealed class MainForm : Form
             _confirm.Show(_face.CurrentExpression, ConfirmPurpose.Update);
             _face.SetExpression(RobotExpression.Confirm);
         }
-        else if (!_chatRunning && !_voiceRunning && !_applying)
+        else if (_chatRunning)
+        {
+            // Tap pendant une discussion : réflexion/parole -> retour écoute,
+            // écoute -> fin de discussion.
+            TapConversation();
+        }
+        else if (!_voiceRunning && !_applying)
         {
             // Tap sur le visage (pas de clavier sur tablette) : discuter.
-            // Ne coupe jamais une session en cours (sinon l'enfant l'arrêterait
-            // sans arrêt) : fin par silences ou touche D sur PC.
             _ = RunConversationAsync();
         }
     }
