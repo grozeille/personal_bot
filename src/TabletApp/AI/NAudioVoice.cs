@@ -136,6 +136,32 @@ internal static class NAudioVoice
         }
     }
 
+    /// <summary>
+    /// Taux de passages par zéro d'un buffer PCM 16 bits mono (0..1) : une
+    /// voyelle est basse (~0.05-0.15), un claquement ou du bruit blanc haut
+    /// (~0.5-1.0). Complète le RMS (fort mais non voisé = bruit).
+    /// </summary>
+    internal static double ComputeZcr(byte[] buffer, int count)
+    {
+        int samples = count / 2;
+        if (samples < 2)
+        {
+            return 1.0;
+        }
+        int crossings = 0;
+        short previous = (short)(buffer[0] | (buffer[1] << 8));
+        for (int i = 1; i < samples; i++)
+        {
+            short current = (short)(buffer[i * 2] | (buffer[i * 2 + 1] << 8));
+            if ((previous >= 0) != (current >= 0))
+            {
+                crossings++;
+            }
+            previous = current;
+        }
+        return (double)crossings / (samples - 1);
+    }
+
     /// <summary>Niveau RMS d'un buffer PCM 16 bits mono (0 = silence).</summary>
     internal static double ComputeRms(byte[] buffer, int count)
     {

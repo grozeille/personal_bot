@@ -39,6 +39,46 @@ internal sealed class HeadTcpClient(string host, int port)
         return reply ?? "";
     }
 
+    /// <summary>Pose directe (annule la piste en cours, tenue jusqu'au prochain ordre).</summary>
+    public async Task<string> SendPoseAsync(double? yaw, double? pitch, double? roll, CancellationToken ct = default)
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream))
+        {
+            writer.WriteStartObject();
+            if (yaw is not null)
+            {
+                writer.WriteNumber("yaw", yaw.Value);
+            }
+            if (pitch is not null)
+            {
+                writer.WriteNumber("pitch", pitch.Value);
+            }
+            if (roll is not null)
+            {
+                writer.WriteNumber("roll", roll.Value);
+            }
+            writer.WriteEndObject();
+        }
+        string payload = Encoding.UTF8.GetString(stream.ToArray()) + "\n";
+        using var client = new TcpClient();
+        try
+        {
+            await client.ConnectAsync(_host, _port, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            VoiceLog.Error($"HEAD connexion {_host}:{_port} impossible ({ex.GetType().Name}) — simu/serveur lance ?");
+            throw;
+        }
+        await using var net = client.GetStream();
+        await net.WriteAsync(Encoding.UTF8.GetBytes(payload), ct).ConfigureAwait(false);
+        using var reader = new StreamReader(net, Encoding.UTF8, leaveOpen: true);
+        string? reply = await reader.ReadLineAsync(ct).ConfigureAwait(false);
+        VoiceLog.Info($"HEAD -> {_host}:{_port} : {reply}");
+        return reply ?? "";
+    }
+
     public static string Host =>
         ResolveHost();
 

@@ -15,32 +15,54 @@ internal sealed record MotionOptions(string TargetHost, int Port)
 
     public static MotionOptions Default { get; } = new(DefaultHost, DefaultPort);
 
-    public static MotionOptions Load(string? configPath = null)
+    /// <summary>Cible tête locale (ex. tablette -> simu PC), survit aux mises à jour.</summary>
+    public static string OverridePath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "TabletApp", "motion-override.json");
+
+    public static MotionOptions Load(string? configPath = null, string? overridePath = null)
+    {
+        MotionOptions fromApp = ReadSection(
+            configPath ?? Path.Combine(AppContext.BaseDirectory, "appsettings.json"));
+        MotionOptions fromLocal = ReadSection(overridePath ?? OverridePath);
+        return new MotionOptions(
+            fromLocal.TargetHost.Length > 0 ? fromLocal.TargetHost
+                : fromApp.TargetHost.Length > 0 ? fromApp.TargetHost : DefaultHost,
+            fromLocal.Port > 0 ? fromLocal.Port
+                : fromApp.Port > 0 ? fromApp.Port : DefaultPort);
+    }
+
+    private static MotionOptions ReadSection(string path)
     {
         try
         {
-            string path = configPath ?? Path.Combine(AppContext.BaseDirectory, "appsettings.json");
             if (!File.Exists(path))
             {
-                return Default;
+                return new MotionOptions("", -1);
             }
             using var doc = JsonDocument.Parse(File.ReadAllText(path));
             if (!doc.RootElement.TryGetProperty("Motion", out JsonElement motion))
             {
-                return Default;
+                return new MotionOptions("", -1);
             }
             string host = motion.TryGetProperty("TargetHost", out JsonElement h)
                 && h.GetString() is { Length: > 0 } name
-                ? name : DefaultHost;
+                ? name : "";
             int port = motion.TryGetProperty("Port", out JsonElement p)
                 && p.TryGetInt32(out int n) && n is > 0 and <= 65535
-                ? n : DefaultPort;
-            return new MotionOptions(host, port);
+                ? n : -1;
+            if (host.Length == 0 && port < 0)
+            {
+                return new MotionOptions("", -1);
+            }
+            return new MotionOptions(
+                host.Length == 0 ? DefaultHost : host,
+                port < 0 ? DefaultPort : port);
         }
         catch
         {
-            // Config illisible : repli silencieux sur les défauts (jamais de crash).
-            return Default;
+            // Config illisible : comme absente (l'autre source gagne).
+            return new MotionOptions("", -1);
         }
     }
 }

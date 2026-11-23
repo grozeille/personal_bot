@@ -2,8 +2,9 @@ using System.Text.Json;
 
 namespace TabletApp.AI;
 
-/// <summary>Appel d'outil reçu (set_emotion : Emotion renseigné).</summary>
-internal sealed record LiveToolCall(string Id, string Name, string? Emotion, string? Sound, string? Gesture);
+/// <summary>Appel d'outil reçu (set_emotion : Emotion renseigné ; move_head : Yaw/Pitch/Roll).</summary>
+internal sealed record LiveToolCall(string Id, string Name, string? Emotion, string? Sound, string? Gesture,
+    double? Yaw = null, double? Pitch = null, double? Roll = null);
 
 /// <summary>Mise à jour serveur décodée (plusieurs aspects peuvent coexister).</summary>
 internal sealed record LiveServerUpdate(
@@ -35,7 +36,41 @@ internal static class LiveProtocol
     /// <summary>Langue imposée (transcription + réponses), sinon hallucinations (es/de).</summary>
     internal const string LanguageCode = "fr-FR";
 
-    public static string BuildSetup(string systemPrompt, IReadOnlyList<string> emotions, IReadOnlyList<string> sounds, IReadOnlyList<string> gestures) =>
+    /// <summary>Voix Live (appsettings "Live":"Voice", null = défaut API).</summary>
+    internal static string? ResolveVoice(string? configPath = null)
+    {
+        try
+        {
+            string path = configPath ?? System.IO.Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+            if (!System.IO.File.Exists(path))
+            {
+                return null;
+            }
+            using var doc = JsonDocument.Parse(System.IO.File.ReadAllText(path));
+            if (!doc.RootElement.TryGetProperty("Live", out JsonElement live)
+                || !live.TryGetProperty("Voice", out JsonElement voice)
+                || voice.GetString() is not { Length: > 0 } name)
+            {
+                return null;
+            }
+            return name;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static object BuildSpeechConfig(string? voiceName) =>
+        string.IsNullOrWhiteSpace(voiceName)
+            ? new { languageCode = LanguageCode }
+            : new
+            {
+                languageCode = LanguageCode,
+                voiceConfig = new { prebuiltVoiceConfig = new { voiceName } },
+            };
+
+    public static string BuildSetup(string systemPrompt, IReadOnlyList<string> emotions, IReadOnlyList<string> sounds, IReadOnlyList<string> gestures, string? voiceName = null) =>
         JsonSerializer.Serialize(new
         {
             setup = new
@@ -44,10 +79,7 @@ internal static class LiveProtocol
                 generationConfig = new
                 {
                     responseModalities = new[] { "AUDIO" },
-                    speechConfig = new
-                    {
-                        languageCode = LanguageCode,
-                    },
+                    speechConfig = BuildSpeechConfig(voiceName),
                 },
                 systemInstruction = new
                 {
@@ -134,6 +166,21 @@ internal static class LiveProtocol
                             {
                                 name = "run_calibration",
                                 description = "Relance la calibration du wake word quand on le demande.",
+                            },
+                            new
+                            {
+                                name = "move_head",
+                                description = "Tourne la tête vers une pose (yaw : + vers sa gauche ; pitch : + levée ; roll : + penchée à sa droite). Au moins un axe. La pose est tenue jusqu'au prochain mouvement.",
+                                parameters = new
+                                {
+                                    type = "OBJECT",
+                                    properties = new
+                                    {
+                                        yaw = new { type = "NUMBER", description = "Rotation gauche/droite en degrés.", },
+                                        pitch = new { type = "NUMBER", description = "Inclinaison haut/bas en degrés.", },
+                                        roll = new { type = "NUMBER", description = "Inclinaison latérale en degrés.", },
+                                    },
+                                },
                             }
                         },
                     },
@@ -208,7 +255,8 @@ internal static class LiveProtocol
                     ? idEl.GetString() ?? "" : "";
                 string name = call.TryGetProperty("name", out JsonElement nameEl)
                     ? nameEl.GetString() ?? "" : "";
-                list.Add(new LiveToolCall(id, name, ReadEmotion(call), ReadSound(call), ReadGesture(call)));
+                list.Add(new LiveToolCall(id, name, ReadEmotion(call), ReadSound(call), ReadGesture(call),
+                    ReadAxis(call, "yaw"), ReadAxis(call, "pitch"), ReadAxis(call, "roll")));
             }
             return LiveServerUpdate.Empty with { ToolCalls = list };
         }
@@ -339,6 +387,57 @@ internal static class LiveProtocol
             catch (JsonException)
             {
             }
+        }
+        return null;
+    }
+
+    /// <summary>Lit un axe move_head (nombre ou chaîne numérique, args objet ou stringifiés).</summary>
+    private static double? ReadAxis(JsonElement call, string axis)
+    {
+        if (!call.TryGetProperty("args", out JsonElement args))
+        {
+            return null;
+        }
+        if (args.ValueKind == JsonValueKind.Object
+            && args.TryGetProperty(axis, out JsonElement direct)
+            && ReadDouble(direct) is { } value)
+        {
+            return value;
+        }
+        if (args.ValueKind == JsonValueKind.String
+            && args.GetString() is { Length: > 0 } encoded)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(encoded);
+                if (doc.RootElement.TryGetProperty(axis, out JsonElement nested)
+                    && ReadDouble(nested) is { } nestedValue)
+                {
+                    return nestedValue;
+                }
+            }
+            catch (JsonException)
+            {
+            }
+        }
+        return null;
+    }
+
+    private static double? ReadDouble(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.Number
+            && element.TryGetDouble(out double value)
+            && double.IsFinite(value))
+        {
+            return value;
+        }
+        if (element.ValueKind == JsonValueKind.String
+            && double.TryParse(element.GetString(),
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out double parsed)
+            && double.IsFinite(parsed))
+        {
+            return parsed;
         }
         return null;
     }

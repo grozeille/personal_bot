@@ -39,8 +39,14 @@ internal sealed class FakeLiveSocket : ILiveSocket
         return Task.CompletedTask;
     }
 
+    public bool FailSend { get; set; }
+
     public Task SendAsync(string json, CancellationToken ct)
     {
+        if (FailSend)
+        {
+            throw new InvalidOperationException("Réseau coupé (simulé).");
+        }
         Sent.Add(json);
         return Task.CompletedTask;
     }
@@ -98,6 +104,12 @@ internal sealed class FakeLivePlayer : ILivePlayer
     public void PlayChunk(byte[] pcm24k) => Played.AddRange(pcm24k);
 
     public void Clear() => Clears++;
+
+    public bool Drained { get; set; } = true;
+
+    public bool IsDrained => Drained;
+
+    public PlayerTurnStats TakeTurnStats() => new(0, 0, 0);
 
     public void Start()
     {

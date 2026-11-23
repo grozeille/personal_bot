@@ -16,7 +16,7 @@ internal static class VoiceLog
 
     private static void Write(string message)
     {
-        string line = $"[{DateTime.Now:HH:mm:ss}] {message}";
+        string line = $"[{DateTime.Now:HH:mm:ss.fff}] {message}";
         lock (Lock)
         {
             Console.WriteLine(line);

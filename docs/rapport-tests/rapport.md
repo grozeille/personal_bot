@@ -1,6 +1,6 @@
-# Rapport de tests BDD — 2026-11-22 09:42
+# Rapport de tests BDD — 2026-11-23 00:16
 
-*53 scénarios : 53 OK, 0 KO.*
+*61 scénarios : 61 OK, 0 KO.*
 
 ## Clignement des yeux — Clignement régulier sur 30 secondes — OK
 
@@ -110,9 +110,17 @@
 
 ![Saccades régulières sur 30 secondes](Regard_de_surveillance_Saccades_régulières_sur_30_secondes_1.png)
 
+## Session Live — Appel d'outil dupliqué ignoré — OK
+
 ## Session Live — Bruit bref sans fin de phrase, silence streamé — OK
 
+## Session Live — Claquement fort ignoré — OK
+
+## Session Live — Compteur de tour remis à zéro après la réponse — OK
+
 ## Session Live — Connexion live impossible — OK
+
+## Session Live — Envois en échec répétés demandent le repli — OK
 
 ## Session Live — Interruption vide le haut-parleur — OK
 
@@ -120,15 +128,23 @@
 
 ## Session Live — Le modèle peut terminer la discussion — OK
 
+## Session Live — Le modèle tourne la tête en direct — OK
+
 ## Session Live — Le robot joue un son sur demande outil — OK
 
 ## Session Live — Le robot sourd pendant sa propre parole — OK
 
 ## Session Live — Long monologue découpé en tours — OK
 
+## Session Live — Micro fermé tant que le haut-parleur joue — OK
+
 ## Session Live — Prout demandé joue un son au lieu de la voix — OK
 
+## Session Live — Réponse bloquée rouverte par le watchdog — OK
+
 ## Session Live — Session live complète avec émotion — OK
+
+## Session Live — Souffle coupé, voix faible transmise — OK
 
 ## Session Live — Tap pendant la réponse revient à l'écoute — OK
 

@@ -73,8 +73,6 @@ material = SubResource("Mat_dark")
 [node name="Head" parent="." instance=ExtResource("2_head")]
 rotation = Vector3(0, 3.14159, 0)
 
-[node name="RollPivot" type="Node3D" parent="Head/PanPivot/TiltPivot"]
-
 [node name="PiBoard" type="CSGBox3D" parent="."]
 mesh = SubResource("Mesh_box")
 scale = Vector3(0.085, 0.015, 0.056)

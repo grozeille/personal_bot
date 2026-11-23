@@ -54,6 +54,26 @@ Fonctionnalité: Session Live
     Quand la session live se déroule
     Alors la calibration est demandée puis la session se termine
 
+  Scénario: Le modèle tourne la tête en direct
+    Soit un serveur live qui tourne la tête
+    Quand la session live se déroule
+    Alors la tête tourne et la session continue
+
+  Scénario: Appel d'outil dupliqué ignoré
+    Soit un serveur live qui répète un appel d'outil
+    Quand la session live se déroule
+    Alors l'appel dupliqué n'agit qu'une fois
+
+  Scénario: Souffle coupé, voix faible transmise
+    Soit un serveur live silencieux
+    Quand le micro capte du souffle puis une voix faible
+    Alors le souffle part en zéros et la voix faible intacte
+
+  Scénario: Claquement fort ignoré
+    Soit un serveur live silencieux
+    Quand le micro capte des claquements forts
+    Alors les bangs forts ne déclenchent pas de tour
+
   Scénario: Tap pendant la réponse revient à l'écoute
     Soit un serveur live qui parle puis termine son tour
     Quand la réponse est coupée par un tap
@@ -63,3 +83,23 @@ Fonctionnalité: Session Live
     Soit un serveur live silencieux
     Quand l'utilisateur parle sans s'arrêter
     Alors une fin de phrase est forcée malgré la parole continue
+
+  Scénario: Compteur de tour remis à zéro après la réponse
+    Soit un serveur live silencieux
+    Quand deux tours utilisateur encadrent une réponse
+    Alors le compteur de tour repart de zéro après la réponse
+
+  Scénario: Micro fermé tant que le haut-parleur joue
+    Soit un serveur live silencieux
+    Quand le haut-parleur garde du retard puis se vide
+    Alors le micro reste sourd puis l'écoute reprend
+
+  Scénario: Réponse bloquée rouverte par le watchdog
+    Soit un serveur live qui parle sans finir son tour
+    Quand le micro tourne pendant le blocage
+    Alors le micro est rouvert et ça se voit dans le journal
+
+  Scénario: Envois en échec répétés demandent le repli
+    Soit un serveur live silencieux
+    Quand les envois échouent
+    Alors la session s'arrête en demandant le repli unaire

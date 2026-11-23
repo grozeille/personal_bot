@@ -325,6 +325,23 @@ internal sealed class MainForm : Form
         }
     }
 
+    /// <summary>Tool move_head : pose directe (le simu/Pi borne, pas de limite côté app).</summary>
+    private async Task MoveHeadAsync(double? yaw, double? pitch, double? roll)
+    {
+        try
+        {
+            var head = new TabletApp.Gestures.HeadTcpClient(
+                TabletApp.Gestures.HeadTcpClient.Host, TabletApp.Gestures.HeadTcpClient.Port);
+            string reply = await head.SendPoseAsync(yaw, pitch, roll).ConfigureAwait(true);
+            VoiceLog.Info($"Tête -> yaw={yaw?.ToString() ?? "-"} pitch={pitch?.ToString() ?? "-"} " +
+                $"roll={roll?.ToString() ?? "-"} : {reply}");
+        }
+        catch (Exception ex)
+        {
+            VoiceLog.Error(ex.Message);
+        }
+    }
+
     /// <summary>
     /// Test voix #5 (touche T, flag --voice-test) : dit bonjour (TTS Gemini),
     /// écoute 10 s (STT Gemini), visage cœur si « bonjour » entendu. Visage
@@ -516,7 +533,8 @@ internal sealed class MainForm : Form
     /// Discussion libre (touche D, flag --discuter) : salutations, boucle
     /// écoute → pense → répond avec émotion, adieux après 2 silences ou D.
     /// </summary>
-    private async Task RunLiveAsync(string key, CancellationToken ct)
+    /// <returns>Vrai si les envois ont lâché (repli unaire demandé).</returns>
+    private async Task<bool> RunLiveAsync(string key, CancellationToken ct)
     {
         await using var socket = new LiveClientWebSocket();
         using var mic = new LiveMic();
@@ -552,11 +570,14 @@ internal sealed class MainForm : Form
                 OnGlow: glow => Ui(() => _face.Glow = glow),
                 OnUserSpeech: () => Ui(() => _face.NotifyActivity()),
                 OnLog: VoiceLog.Info,
-                OnCalibrationRequested: () => _pendingCalibration = true));
+                OnCalibrationRequested: () => _pendingCalibration = true,
+                OnMoveHead: (yaw, pitch, roll) => { _ = MoveHeadAsync(yaw, pitch, roll); }),
+            voiceName: LiveProtocol.ResolveVoice());
         _liveSession = session;
         try
         {
             await session.RunAsync(ct);
+            return session.SendFailed;
         }
         finally
         {
@@ -668,7 +689,11 @@ internal sealed class MainForm : Form
                 ?? throw new InvalidOperationException("Clé Gemini manquante.");
             try
             {
-                await RunLiveAsync(key, _chatCts.Token);
+                if (await RunLiveAsync(key, _chatCts.Token))
+                {
+                    VoiceLog.Info("Live : envois en échec, repli unaire.");
+                    await RunUnaryAsync(key, previous, _chatCts.Token);
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {

@@ -8,8 +8,8 @@ Vignettes cliquables = lien d'achat Amazon.ca (ou recherche si pas de fiche).
 
 | Image | Pièce | Spec | Qté | Prix indicatif | Note |
 |---|---|---|---|---|---|
-| <a href="https://www.amazon.ca/s?k=MG996R+servo+metal+180"><img src="img/mg996r.webp" width="140"></a> | Servo Pan + Roll | MG996R, couple ~10 kg·cm, pignons métal | 2 | ~14 $/pc | Miuzei validé (180°, métal) ; palonniers plastiques inclus ; prévoir palonniers alu 25T séparés |
-| <a href="https://www.amazon.ca/dp/B0CCXRCFK4"><img src="img/ds3218.jpg" width="140"></a> | Servo Tilt | Wishiot RDS3218 270° waterproof + étrier U, 40×20×40 mm, 60 g, 21,5 kg·cm @5 V, 25T | 1 | prix à confirmer | Étrier U inclus (tilt symétrique, kit b) ; 270° (butées soft conservées) |
+| <a href="https://www.amazon.ca/dp/B07YKXLWWJ"><img src="img/mg996r.webp" width="140"></a> | Servo Pan + Roll | MG996R (RGBZone), ~10 kg·cm, métal, 180° | 2 | ~14 $/pc (à confirmer) | Disque rond + étoiles inclus ; prévoir palonniers alu 25T séparés |
+| <a href="https://www.amazon.ca/dp/B0CCXRCFK4"><img src="img/rds3218-u.jpg" width="140"></a> | Servo Tilt | Wishiot RDS3218 270° waterproof + 2 U, 40×20×40 mm, 60 g, 21,5 kg·cm @5 V, 25T | 1 | prix à confirmer | Grand U 31.5 stator sur disque rouge pan + petit U 27 rotor ; 270° (butées soft conservées) |
 | <a href="https://www.amazon.ca/dp/B014KTSMLA"><img src="img/pca9685.jpg" width="140"></a> | Contrôleur PWM | PCA9685 16 canaux, I2C | 1 | 15,98 $ | SDA/SCL/3.3V/GND vers le Pi (SUNFOUNDER sur amazon.ca) |
 | — | Raspberry Pi | Pi 1 Model B Rev 2 (vérifié, EN STOCK) | 1 | 0 (stock) | Serveur Go (#28), pas d'achat ; SD 4 Go serrée, 16 Go conseillées |
 | <a href="https://www.amazon.ca/dp/B09JW28WQC"><img src="img/alim.jpg" width="140"></a> | Alim servos | 5 V / 4 A minimum, jack ou bornier | 1 | ~20 $ | Ligne séparée du Pi (jamais le 5V du Pi pour les servos) |
@@ -23,7 +23,7 @@ Vignettes cliquables = lien d'achat Amazon.ca (ou recherche si pas de fiche).
 | Image | Pièce | Spec | Qté | Prix indicatif | Note |
 |---|---|---|---|---|---|
 | — | Base bois lestée | 20×20 cm, ép. ≥ 18 mm | 1 | récup/chute | Percer + visser le socle Pan ; lester si besoin |
-| <a href="https://www.amazon.ca/s?k=pan+tilt+servo+bracket+kit+MG996R"><img src="img/kit-pantilt.jpg" width="140"></a> | Kit pan-tilt 2 axes alu (1× U court + 1× multifonction + roulement + visserie) | Pour MG996R/DS3218, ex. short pan-tilt kit | 1 | ~15 $ | Base PAN→TILT : palonnier vissé sous plateau, roulement sous charge (cf. hardware/plan-2d-v2.png) |
+| <a href="https://www.amazon.ca/s?k=pan+tilt+servo+bracket+kit+MG996R"><img src="img/kit-pantilt.jpg" width="140"></a> | Kit pan-tilt 2 axes alu (1× U court + visserie) | U court 48mm B07PQ12TXS = berceau du servo pan (visse a la planche) | 1 | ~15 $ | U long du kit = inutile (pas dans le montage) |
 | <a href="https://www.amazon.ca/s?k=multifunction+servo+bracket+MG996R"><img src="img/equerre.jpg" width="140"></a> | Équerre multifonction alu (berceau standard 40×20) | Type servo bracket 58×37×25,5 | 1–2 | ~8 $/pc | Berceau ROLL + fixation tablette : servo bridé par oreilles, palonnier vissé |
 | <a href="https://www.amazon.ca/s?k=25T+metal+servo+horn"><img src="img/palonniers.png" width="140"></a> | Palonniers alu 25T | Bras métal 25 dents (MG996R/DS3218) | 3 | ~12 $/lot | Mise au neutre 90° avant vissage (cf. issue #10) ; le DS3218 inclut déjà un bras métal 25T |
 | <a href="https://www.amazon.ca/dp/B01G934L2O"><img src="img/pince.jpg" width="140"></a> | Pince tablette | Pince universelle 8" (Dell Venue 8 Pro, 216×130 mm) | 1 | 12,79 $ | Fixation sur Roll, coins dégagés ; vérifier ouverture ≥ 130 mm ; filetage 1/4" standard (prévoir vis 1/4" vers le support) |

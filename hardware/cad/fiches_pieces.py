@@ -85,115 +85,62 @@ def build_pan():
         for sy in (-0.006, 0.006):
             o.append(zhole(sx, sy, 0.016, 0.0016))
     o.append(cyl("PanShaft", 0.003, 0.006, (0.0032, 0, 0.021), m_steel))
+    o.append(cyl("PanHornF", 0.00975, 0.003, (0.0032, 0, 0.0255), m_pan))
     return o
 
 def build_tilt():
-    # Config photo: R_y(-90), arbre axe X cote -X, corps X36.6/Y20/Z40.3,
-    # arbre decale +3.2 en Z (standard), oreilles haut/bas.
+    # RDS3218 rework atelier (assemblage_2axes.blend) : arbre cote +X, a -8 du centre.
+    # Corps 40 x 20 x 40 + arbre r1.5 + palonnier O19.5 ep3. Pas d'idler.
     o = []
-    o.append(box("TiltBody", (0.0366, 0.020, 0.0403), (0, 0, 0), m_tilt))
-    o.append(cyl("TiltShaft", 0.003, 0.010, (-0.0233, 0, 0.00325), m_steel, rot=(0, math.radians(90), 0)))
-    o.append(cyl("TiltHornF", 0.012, 0.003, (-0.030, 0, 0.00325), m_horn, rot=(0, math.radians(90), 0)))
-    for sz in (0.0235, -0.0235):
-        o.append(box("Ear", (0.003, 0.013, 0.007), (0.010, 0, sz), m_tilt))
-        for sy in (-0.005, 0.005):
-            o.append(xhole(0.010, sy, sz, 0.0016))
+    o.append(box("TiltBody", (0.040, 0.020, 0.040), (0, 0, 0), m_tilt))
+    o.append(cyl("TiltShaft", 0.0015, 0.014, (0.0183, 0, -0.008), m_steel, rot=(0, math.radians(90), 0)))
+    o.append(cyl("TiltHornU", 0.00975, 0.003, (0.0264, 0, -0.008), m_horn, rot=(0, math.radians(90), 0)))
     return o
 
-def build_bracket():
-    # photo2: plateau ~60x60 (A-VALIDER) + 2 pattes, trous pattes entraxe 48, 10mm vertical
+def build_rds_haut():
+    # Chape haute RDS3218.blend : plaque 55.6 x 20 ep2 + 2 joues 31.5.
+    # Origine = centre du corps servo (meme repere que build_tilt).
     o = []
-    o.append(box("Bracket", (0.060, 0.060, 0.002), (0, 0, 0), m_kit))
-    o.append(zhole(0, 0, 0, 0.004))
-    for sx in (-0.012, 0.012):
-        for sy in (-0.012, 0.012):
-            o.append(zhole(sx, sy, 0, 0.0015))
-    for sx in (-0.022, 0.022):
-        o.append(zhole(sx, 0, 0, 0.0015))
-        o.append(zhole(0, sx, 0, 0.0015))
-    for sx in (-0.024, 0.024):
-        o.append(box("Tab", (0.002, 0.020, 0.022), (sx, 0, 0.012), m_kit))
-        o.append(xhole(sx, 0, 0.011, 0.0015))
-        o.append(xhole(sx, 0, 0.021, 0.0015))
+    o.append(box("RDSHautPlaque", (0.0556, 0.020, 0.002), (0, 0, 0.031), m_tilt))
+    for sx in (-0.0288, 0.0288):
+        o.append(box("RDSHautJoue", (0.002, 0.020, 0.0315), (sx, 0, 0.01625), m_tilt))
     return o
 
-def build_plateau():
+def build_rds_bas():
+    # Chape basse RDS3218.blend : plaque 44.5 x 20 ep2 + 2 joues 27.
+    # Origine = centre du corps servo (meme repere que build_tilt).
     o = []
-    o.append(box("Plateau", (0.062, 0.062, 0.002), (0, 0, 0), m_kit))
-    o.append(zhole(0, 0, 0, 0.003))
-    for sx in (-0.02, 0.02):
-        for sy in (-0.02, 0.02):
-            o.append(zhole(sx, sy, 0, 0.0015))
+    o.append(box("RDSBasPlaque", (0.0445, 0.020, 0.002), (0, 0, -0.030), m_tilt))
+    for sx in (-0.02325, 0.02325):
+        o.append(box("RDSBasJoue", (0.002, 0.020, 0.027), (sx, 0, -0.0175), m_tilt))
     return o
 
-def build_u():
-    # photo1: interieur 52 (ext 56), axe (gros trou) a 52 du socle, trous a 16.5/33.5,
-    # sommets arrondis R=profondeur/2. Profondeur 40 A-VALIDER. Origine = axe.
+def yhole(x, y, z, r, h=0.004):
+    return cyl("hole", r, h, (x, y, z), m_hole, rot=(math.radians(90), 0, 0))
+
+    return o
+
+    return o
+
+    return o
+
+def build_ucourt():
+    # U atelier, cotation exacte du groupe u_court_48, rotation -90 X incluse
+    # (repere viewport/assemblage). Plaque verticale 40x42 + plancher 40x20
+    # + 2 bandes + 2 bras.
+    _RX = (math.radians(-90), 0, 0)
     o = []
-    o.append(box("UFond", (0.056, 0.040, 0.002), (0, 0, -0.051), m_kit))
-    o.append(zhole(0, 0, -0.051, 0.004))
-    for sx, sy in ((0.0065, 0), (-0.0065, 0), (0, 0.0065), (0, -0.0065)):
-        o.append(zhole(sx, sy, -0.051, 0.0012))
-    for sx in (-0.027, 0.027):
-        o.append(box("UArm", (0.002, 0.040, 0.052), (sx, 0, -0.026), m_kit))
-        o.append(cyl("UArc", 0.020, 0.0024, (sx, 0, 0), m_kit, rot=(0, math.radians(90), 0)))
-        o.append(xhole(sx, 0, 0, 0.004))
-        for dy, dz in ((0.010, 0), (-0.010, 0), (0, 0.010), (0, -0.010)):
-            o.append(xhole(sx, dy, dz, 0.0015))
-        o.append(xhole(sx, 0, -0.0185, 0.0015))
-        o.append(xhole(sx, 0, -0.0355, 0.0015))
+    o.append(box("UBaseCourt", (0.040, 0.042, 0.002), (0.000, 0.001, -0.021), m_kit, rot=_RX))
+    o.append(box("UFlasque", (0.040, 0.002, 0.020), (0.000, 0.012, -0.020), m_kit, rot=_RX))
+    o.append(box("UBande", (0.008, 0.028, 0.002), (-0.024, 0.001, 0.000), m_kit, rot=_RX))
+    o.append(box("UBande.001", (0.008, 0.028, 0.002), (0.024, 0.001, 0.000), m_kit, rot=_RX))
+    o.append(box("UArmL", (0.008, 0.002, 0.020), (-0.024, 0.012, 0.013), m_kit, rot=_RX))
+    o.append(box("UArmR", (0.008, 0.002, 0.020), (0.024, 0.012, 0.013), m_kit, rot=_RX))
     return o
 
 def build_horn_pan():
-    # Palonnier rond fourni O19.5 : centre + 4 trous (visse sous socle U).
-    o = []
-    o.append(cyl("HornPan", 0.00975, 0.003, (0, 0, 0), m_horn))
-    o.append(zhole(0, 0, 0, 0.003))
-    for sx, sy in ((0.0065, 0), (-0.0065, 0), (0, 0.0065), (0, -0.0065)):
-        o.append(zhole(sx, sy, 0, 0.0012))
-    return o
-
-def build_horn_tilt():
-    # Palonnier rond fourni O19.5 : centre + 2 vis (visse au bras du U).
-    o = []
-    o.append(cyl("HornTilt", 0.00975, 0.003, (0, 0, 0), m_horn))
-    o.append(zhole(0, 0, 0, 0.003))
-    for sx in (-0.0065, 0.0065):
-        o.append(zhole(sx, 0, 0, 0.0015))
-    return o
-
-def build_bras_alu():
-    # Bras alu rouge 25T (photo cotation): L35 x l~10 x ep6, alesage O6 25T,
-    # trous M3 a 15/20/24 du centre, serrage fendu + vis.
-    o = []
-    o.append(cyl("Moyeu", 0.0065, 0.0062, (-0.014, 0, 0), m_horn))
-    o.append(cyl("Alesage", 0.003, 0.007, (-0.014, 0, 0), m_hole))
-    import math as _m
-    for _i in range(25):
-        _a = 2 * _m.pi * _i / 25
-        o.append(box(f"Cannelure{_i}", (0.0012, 0.0009, 0.0064),
-                     (-0.014 + 0.003 * _m.cos(_a), 0.003 * _m.sin(_a), 0),
-                     m_horn, rot=(0, 0, _a)))
-    o.append(box("Fente", (0.008, 0.002, 0.007), (-0.018, 0, 0), m_hole))
-    o.append(cyl("VisSerrage", 0.0015, 0.012, (-0.020, 0, 0), m_steel, rot=(math.radians(90), 0, 0)))
-    o.append(box("Bras", (0.030, 0.010, 0.006), (0.001, 0, 0), m_horn))
-    o.append(cyl("BoutRond", 0.005, 0.0062, (0.016, 0, 0), m_horn))
-    for hx in (0.001, 0.006, 0.010):
-        o.append(zhole(hx, 0, 0, 0.0015))
-    return o
-
-def build_equerre():
-    # Equerre d'entrainement tilt : platine vissee sur palonnier (2x M3),
-    # bras lateral + pied boulonne (2x M3) sous le crochet gauche.
-    # Evite le bras du U (x) et le corps servo (y/z) a tous les angles.
-    o = []
-    o.append(box("EqPlatine", (0.003, 0.030, 0.030), (-0.0055, 0, 0), m_steel))
-    o.append(xhole(-0.0055, 0.0065, 0, 0.0016))
-    o.append(xhole(-0.0055, -0.0065, 0, 0.0016))
-    o.append(box("EqBras", (0.042, 0.008, 0.004), (-0.025, -0.006, 0.016), m_steel))
-    o.append(zhole(-0.036, -0.0075, 0.016, 0.0016, 0.008))
-    o.append(zhole(-0.042, -0.0075, 0.016, 0.0016, 0.008))
-    return o
+    # (retire : palonnier integre a la fiche pan_mg996r)
+    return []
 
 def build_support():
     # Pince X a ressort 4.7x3.1in (119x79 ferme) : corps X + 4 crochets,
@@ -235,14 +182,10 @@ def build_base():
 BUILDERS = {
     "pan_mg996r": build_pan,
     "tilt_ds3218": build_tilt,
-    "platine_bracket": build_bracket,
-    "plateau": build_plateau,
-    "U_kit": build_u,
-    "palonnier_pan": build_horn_pan,
-    "palonnier_tilt": build_horn_tilt,
-    "bras_alu_25t": build_bras_alu,
+    "rds_haut": build_rds_haut,
+    "rds_bas": build_rds_bas,
+    "u_court_48": build_ucourt,
     "support_pince": build_support,
-    "equerre_14": build_equerre,
     "tablette": build_tablette,
     "base_bois": build_base,
 }
@@ -250,15 +193,11 @@ BUILDERS = {
 # etendues max par piece et par vue (m) pour cadrage ortho
 EXT = {
     "pan_mg996r": {"face": 0.055, "dessus": 0.055, "gauche": 0.042},
-    "tilt_ds3218": {"face": 0.054, "dessus": 0.047, "gauche": 0.054},
-    "platine_bracket": {"face": 0.060, "dessus": 0.060, "gauche": 0.060},
-    "plateau": {"face": 0.062, "dessus": 0.062, "gauche": 0.062},
-    "U_kit": {"face": 0.072, "dessus": 0.056, "gauche": 0.072},
-    "palonnier_pan": {"face": 0.0195, "dessus": 0.0195, "gauche": 0.0195},
-    "palonnier_tilt": {"face": 0.0195, "dessus": 0.0195, "gauche": 0.0195},
-    "bras_alu_25t": {"face": 0.035, "dessus": 0.035, "gauche": 0.013},
+    "tilt_ds3218": {"face": 0.062, "dessus": 0.062, "gauche": 0.042},
+    "rds_haut": {"face": 0.058, "dessus": 0.058, "gauche": 0.034},
+    "rds_bas": {"face": 0.047, "dessus": 0.047, "gauche": 0.034},
+    "u_court_48": {"face": 0.060, "dessus": 0.058, "gauche": 0.046},
     "support_pince": {"face": 0.156, "dessus": 0.085, "gauche": 0.156},
-    "equerre_14": {"face": 0.042, "dessus": 0.042, "gauche": 0.037},
     "tablette": {"face": 0.216, "dessus": 0.216, "gauche": 0.130},
     "base_bois": {"face": 0.20, "dessus": 0.20, "gauche": 0.20},
 }

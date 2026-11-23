@@ -629,13 +629,18 @@ internal static class SelfTest
     private static bool CheckMotionOptions(List<string> log)
     {
         // Cible tête : défauts, fichier custom, surcharge env.
+        string bogusOverride = Path.Combine(Path.GetTempPath(), "patate-motion-override-absent.json");
         TabletApp.Gestures.MotionOptions missing = TabletApp.Gestures.MotionOptions.Load(
-            Path.Combine(Path.GetTempPath(), "patate-motion-absent.json"));
+            Path.Combine(Path.GetTempPath(), "patate-motion-absent.json"), bogusOverride);
         bool defaultsOk = missing == TabletApp.Gestures.MotionOptions.Default;
         string customPath = Path.Combine(Path.GetTempPath(), "patate-motion-test.json");
         File.WriteAllText(customPath, "{\"Motion\": {\"TargetHost\": \"192.168.0.99\", \"Port\": 1234}}");
-        TabletApp.Gestures.MotionOptions custom = TabletApp.Gestures.MotionOptions.Load(customPath);
+        TabletApp.Gestures.MotionOptions custom = TabletApp.Gestures.MotionOptions.Load(customPath, bogusOverride);
         bool customOk = custom.TargetHost == "192.168.0.99" && custom.Port == 1234;
+        string overridePath = Path.Combine(Path.GetTempPath(), "patate-motion-override.json");
+        File.WriteAllText(overridePath, "{\"Motion\": {\"TargetHost\": \"192.168.0.42\", \"Port\": 9080}}");
+        TabletApp.Gestures.MotionOptions over = TabletApp.Gestures.MotionOptions.Load(customPath, overridePath);
+        bool overrideOk = over.TargetHost == "192.168.0.42" && over.Port == 9080;
         Environment.SetEnvironmentVariable("HEAD_SIM_HOST", "10.9.9.9");
         Environment.SetEnvironmentVariable("HEAD_SIM_PORT", "4321");
         bool envOk;
@@ -649,8 +654,8 @@ internal static class SelfTest
             Environment.SetEnvironmentVariable("HEAD_SIM_HOST", null);
             Environment.SetEnvironmentVariable("HEAD_SIM_PORT", null);
         }
-        bool ok = defaultsOk && customOk && envOk;
-        log.Add($"MotionOptions: defauts={defaultsOk}, fichier={customOk}, env={envOk} -> {(ok ? "OK" : "KO")}");
+        bool ok = defaultsOk && customOk && overrideOk && envOk;
+        log.Add($"MotionOptions: defauts={defaultsOk}, fichier={customOk}, surcharge={overrideOk}, env={envOk} -> {(ok ? "OK" : "KO")}");
         return ok;
     }
 
@@ -720,7 +725,10 @@ internal static class SelfTest
     {
         // Protocole Live : construction et décodage, sans réseau.
         string setup = LiveProtocol.BuildSetup("SYS", new[] { "happy", "sad" }, new[] { "giggle" }, new[] { "nod_yes" });
+        string setupVoice = LiveProtocol.BuildSetup("SYS", new[] { "happy" }, new[] { "giggle" }, new[] { "nod_yes" }, "Kore");
         bool setupOk = setup.Contains("models/gemini-3.8-live")
+            && setupVoice.Contains("Kore") && setupVoice.Contains("prebuiltVoiceConfig")
+            && !setup.Contains("prebuiltVoiceConfig")
             && setup.Contains("generationConfig")
             && setup.Contains("set_emotion") && setup.Contains("SYS") && setup.Contains("play_sound") && setup.Contains("play_fart")
             && setup.Contains("play_gesture") && setup.Contains("nod_yes")
@@ -786,8 +794,17 @@ internal static class SelfTest
             "{\"serverContent\":{\"interrupted\":true}}");
         LiveServerUpdate away = LiveProtocol.ParseUpdate("{\"goAway\":{}}");
         LiveServerUpdate alien = LiveProtocol.ParseUpdate("{\"nimporte\":{}}");
+        LiveServerUpdate move = LiveProtocol.ParseUpdate(
+            "{\"toolCall\":{\"functionCalls\":[{\"id\":\"c4\",\"name\":\"move_head\","
+            + "\"args\":{\"yaw\":-30,\"pitch\":\"5.5\"}}]}}");
+        LiveServerUpdate moveStr = LiveProtocol.ParseUpdate(
+            "{\"toolCall\":{\"functionCalls\":[{\"id\":\"c5\",\"name\":\"move_head\","
+            + "\"args\":\"{\\\"roll\\\":18}\"}]}}");
         bool parseOk = done.SetupComplete
             && call.ToolCalls.Count == 1 && call.ToolCalls[0] == new LiveToolCall("c1", "set_emotion", "happy", null, null)
+            && move.ToolCalls.Count == 1 && move.ToolCalls[0].Yaw == -30
+            && move.ToolCalls[0].Pitch == 5.5 && move.ToolCalls[0].Roll is null
+            && moveStr.ToolCalls.Count == 1 && moveStr.ToolCalls[0].Roll == 18
             && strArgs.ToolCalls.Count == 1 && strArgs.ToolCalls[0].Emotion == "love"
             && sfx.ToolCalls.Count == 1 && sfx.ToolCalls[0].Sound == "giggle"
 
@@ -1524,6 +1541,8 @@ internal static class SelfTest
         public void Clear()
         {
         }
+        public bool IsDrained => true;
+        public TabletApp.AI.PlayerTurnStats TakeTurnStats() => new(0, 0, 0);
         public void Start()
         {
         }
@@ -1549,7 +1568,8 @@ internal static class SelfTest
             msg => Console.WriteLine("  LOG: " + msg));
         var session = new TabletApp.AI.LiveSession(
             "sim", "sim", Array.Empty<string>(), Array.Empty<string>(), Array.Empty<string>(),
-            socket, new SimMic(), new SimPlayer(), events);
+            socket, new SimMic(), new SimPlayer(), events,
+            turnTimeout: TimeSpan.FromMilliseconds(1200));
         const int frame = 1600;
         int frames = samples.Length / frame;
         var spark = new System.Text.StringBuilder();

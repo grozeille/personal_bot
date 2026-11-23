@@ -9,8 +9,8 @@ Prix relevés le 21 nov. 2026, à confirmer au panier.
 
 | Image | Pièce | Spec | Qté | Prix indicatif | Note |
 |---|---|---|---|---|---|
-| <a href="https://www.amazon.ca/s?k=MG996R+servo+metal+180"><img src="img/mg996r.webp" width="140"></a> | Servo Pan | MG996R, couple ~10 kg·cm, pignons métal | 1 | ~14 $ | Miuzei validé (180°, métal) ; 1 seul (pas de roll) |
-| <a href="https://www.amazon.ca/dp/B0CCXRCFK4"><img src="img/ds3218.jpg" width="140"></a> | Servo Tilt | Wishiot RDS3218 270° waterproof + étrier U, 40×20×40 mm, 60 g, 21,5 kg·cm @5 V (25 @6,8 V), 25T | 1 | prix à confirmer | 270° (fils noir-rouge-blanc, + au centre) ; étrier U inclus ; butées soft pitch -30/+45 conservées |
+| <a href="https://www.amazon.ca/dp/B07YKXLWWJ"><img src="img/mg996r.webp" width="140"></a> | Servo Pan | MG996R RGBZone, ~10 kg·cm, métal, 180° | 1 | ~14 $ (à confirmer) | Disque rond ROUGE + étoiles inclus ; disque porte la chape base 55.6, étoiles en spare |
+| <a href="https://www.amazon.ca/dp/B0CCXRCFK4"><img src="img/rds3218-u.jpg" width="140"></a> | Servo Tilt | Wishiot RDS3218 270° waterproof + chapes, 40×20×40 mm, 60 g, 21,5 kg·cm @5 V (25 @6,8 V), 25T | 1 | prix à confirmer | Rework atelier : arbre cote +X a -8, palonnier O19.5, pas d'idler ; chape base 55.6 + chape haute 44.5 (sans percages) ; butées soft pitch conservées |
 | <a href="https://www.amazon.ca/dp/B014KTSMLA"><img src="img/pca9685.jpg" width="140"></a> | Contrôleur PWM | PCA9685 16 canaux, I2C | 1 | 15,98 $ | SDA/SCL/3.3V/GND vers le Pi |
 | — | Raspberry Pi | Pi 1 Model B Rev 2 (vérifié, EN STOCK) | 1 | 0 (stock) | Serveur Go (#28), pas d'achat |
 | <a href="https://www.amazon.ca/dp/B09JW28WQC"><img src="img/alim.jpg" width="140"></a> | Alim servos | 5 V / 4 A minimum, jack ou bornier | 1 | ~20 $ | Ligne séparée du Pi (jamais le 5V du Pi pour les servos) |
@@ -22,11 +22,11 @@ Prix relevés le 21 nov. 2026, à confirmer au panier.
 | Image | Pièce | Spec | Qté | Prix indicatif | Note |
 |---|---|---|---|---|---|
 | — | Base bois lestée | 20×20 cm, ép. ≥ 18 mm | 1 | récup/chute | Percer + visser le socle Pan ; lester si besoin |
-| <a href="https://www.amazon.ca/s?k=pan+tilt+servo+bracket+kit+MG996R"><img src="img/kit-pantilt.jpg" width="140"></a> | Kit pan-tilt 2 axes alu | Pour MG996R/DS3218, ex. short pan-tilt kit | 1 | ~15 $ | Base PAN→TILT + roulement ; visserie du kit réutilisée partout |
+| <a href="https://www.amazon.ca/dp/B07PQ12TXS"><img src="img/kit-pantilt.jpg" width="140"></a> | Kit pan-tilt 2 axes alu | U rework atelier (sol 40x20 + mur + montants + bras plats, ex-B07PQ12TXS) | 1 | ~15 $ | Mur traverse la planche (-4) : trou traversant a prevoir ; bras plats sur les flancs du servo |
 | <a href="https://www.amazon.ca/dp/B01G934L2O"><img src="img/pince.jpg" width="140"></a> | Pince tablette | Pince universelle 8" (216×130 mm) | 1 | 12,79 $ | Fixation directe sur le tilt, coins dégagés ; ouverture ≥ 130 mm ; filetage 1/4" standard (prévoir vis 1/4" vers le support) |
 | <a href="https://www.amazon.ca/dp/B01LZF1ZSZ"><img src="img/dupont.jpg" width="140"></a> | Câblage | Dupont femelle-femelle 20 cm | 1 lot | 10,99 $ | I2C Pi→PCA9685 ; alim : câble PSU coupé direct au bornier |
 
-## Total indicatif (sans Pi ni tablette) : ~130 $CA (fourchette ~120–140)
+## Total indicatif (sans Pi ni tablette) : ~130 $CA avant (fourchette ~120–140) — **à recalculer : prix du RDS3218 + étrier U à confirmer au panier** (remplace l'ancien DS3218 à 22,99 $).
 
 ## Ce qui change vs BOM complet (~110 $ économisés)
 

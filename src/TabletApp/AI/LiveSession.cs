@@ -23,11 +23,16 @@ internal interface ILiveMic : IDisposable
     void Stop();
 }
 
+/// <summary>Compteurs audio d'un tour modèle (diagnostic des coupures).</summary>
+internal sealed record PlayerTurnStats(int BufferedBytes, int PeakBytes, int DroppedChunks);
+
 /// <summary>Haut-parleur streaming injectable (PCM 24 kHz).</summary>
 internal interface ILivePlayer : IDisposable
 {
     void PlayChunk(byte[] pcm24k);
     void Clear();
+    bool IsDrained { get; }
+    PlayerTurnStats TakeTurnStats();
     void Start();
     void Stop();
 }
@@ -43,7 +48,8 @@ internal sealed record LiveCallbacks(
     Action<TabletApp.UI.VoiceGlow> OnGlow,
     Action OnUserSpeech,
     Action<string> OnLog,
-    Action? OnCalibrationRequested = null);
+    Action? OnCalibrationRequested = null,
+    Action<double?, double?, double?>? OnMoveHead = null);
 
 /// <summary>
 /// Session vocale Live : micro streamé, audio modèle joué, tools exécutés,
@@ -66,6 +72,7 @@ internal sealed class LiveSession
     private readonly TimeSpan _idleTimeout;
     private readonly TimeSpan _turnTimeout;
     private readonly TimeSpan _maxTurnTimeout;
+    private readonly string? _voiceName;
 
     private readonly object _sync = new();
     private DateTime _lastSpeech = DateTime.UtcNow;
@@ -78,16 +85,22 @@ internal sealed class LiveSession
     private DateTime _speakEndedAt = DateTime.MinValue;
     private volatile bool _mutedTurn;
     private volatile bool _dropAudio;
+    private readonly HashSet<string> _seenToolIds = new();
     private int _speechChunks;
+    private long _turnModelBytes;
+    private int _turnModelMsgs;
     private int _turnAudioChunks;
     private double _turnPeakRms;
+    private DateTime _lastAudioAt = DateTime.MinValue;
+    private readonly TimeSpan _watchdogTimeout;
+    private int _sendFailures;
     private CancellationTokenSource? _stop;
 
     public LiveSession(
         string apiKey, string systemPrompt, IReadOnlyList<string> emotions, IReadOnlyList<string> sounds, IReadOnlyList<string> gestures,
         ILiveSocket socket, ILiveMic mic, ILivePlayer player,
         LiveCallbacks events, TimeSpan? idleTimeout = null, TimeSpan? turnTimeout = null,
-        TimeSpan? maxTurnTimeout = null)
+        TimeSpan? maxTurnTimeout = null, string? voiceName = null, TimeSpan? watchdogTimeout = null)
     {
         _apiKey = apiKey;
         _systemPrompt = systemPrompt;
@@ -99,8 +112,10 @@ internal sealed class LiveSession
         _player = player;
         _events = events;
         _idleTimeout = idleTimeout ?? TimeSpan.FromSeconds(60);
-        _turnTimeout = turnTimeout ?? TimeSpan.FromMilliseconds(1200);
+        _turnTimeout = turnTimeout ?? DefaultTurnTimeout;
         _maxTurnTimeout = maxTurnTimeout ?? TimeSpan.FromSeconds(12);
+        _voiceName = voiceName;
+        _watchdogTimeout = watchdogTimeout ?? TimeSpan.FromSeconds(10);
     }
 
     public async Task RunAsync(CancellationToken ct)
@@ -112,7 +127,7 @@ internal sealed class LiveSession
         {
             await _socket.ConnectAsync(
                 LiveProtocol.Endpoint, _apiKey, stop.Token).ConfigureAwait(false);
-            string setupJson = LiveProtocol.BuildSetup(_systemPrompt, _emotions, _sounds, _gestures);
+            string setupJson = LiveProtocol.BuildSetup(_systemPrompt, _emotions, _sounds, _gestures, _voiceName);
             await _socket.SendAsync(setupJson, stop.Token).ConfigureAwait(false);
             await WaitForSetupAsync(setupJson, stop.Token, ct).ConfigureAwait(false);
             _events.OnLog($"Live : session prête en {setupWatch.Elapsed.TotalSeconds:F1} s.");
@@ -145,6 +160,9 @@ internal sealed class LiveSession
         }
     }
 
+    /// <summary>Vrai si les envois ont lâché (repli unaire demandé).</summary>
+    public bool SendFailed { get; private set; }
+
     public void RequestStop()
     {
         try
@@ -170,8 +188,7 @@ internal sealed class LiveSession
             _speakEndedAt = DateTime.MinValue;
             _dropAudio = true;
             _lastModelActivity = DateTime.UtcNow;
-            _turnCompleteSent = false;
-            _speechChunks = 0;
+            ResetTurnTracking();
         }
         _events.OnSpeaking(false);
         _events.OnGlow(TabletApp.UI.VoiceGlow.Listening);
@@ -239,9 +256,12 @@ internal sealed class LiveSession
                 lock (_sync)
                 {
                     _lastModelActivity = DateTime.UtcNow;
-                    _turnCompleteSent = false;
-                    _speechChunks = 0;                    lag = (DateTime.UtcNow - _lastSpeech).TotalSeconds;
+                    _lastAudioAt = DateTime.UtcNow;
+                    ResetTurnTracking();
+                    lag = (DateTime.UtcNow - _lastSpeech).TotalSeconds;
                 }
+                _turnModelBytes += pcm.Length;
+                _turnModelMsgs++;
                 if (!_speaking)
                 {
                     _speaking = true;
@@ -263,8 +283,8 @@ internal sealed class LiveSession
                 lock (_sync)
                 {
                     _lastModelActivity = DateTime.UtcNow;
-                    _turnCompleteSent = false;
-                    _speechChunks = 0;                }
+                    ResetTurnTracking();
+                }
                 if (!_mutedTurn && !_dropAudio)
                 {
                     robotText.Append(said);
@@ -275,13 +295,26 @@ internal sealed class LiveSession
                 lock (_sync)
                 {
                     _lastModelActivity = DateTime.UtcNow;
-                    _turnCompleteSent = false;
-                    _speechChunks = 0;                }
+                    ResetTurnTracking();
+                }
             }
             bool endByTool = false;
             bool calibrateByTool = false;
             foreach (LiveToolCall call in update.ToolCalls)
             {
+                _events.OnLog($"Live : outil {call.Name} ({call.Id}).");
+                if (call.Id.Length > 0 && !_seenToolIds.Add(call.Id))
+                {
+                    _events.OnLog($"Live : outil {call.Id} déjà traité, ignoré.");
+                    await _socket.SendAsync(
+                        LiveProtocol.BuildToolResponse(new[] { (call.Id, call.Name) }),
+                        stop.Token).ConfigureAwait(false);
+                    continue;
+                }
+                if (_seenToolIds.Count > 100)
+                {
+                    _seenToolIds.Clear();
+                }
                 if (call.Name == "end_conversation")
                 {
                     _events.OnLog("Live : fin de discussion demandée.");
@@ -291,6 +324,17 @@ internal sealed class LiveSession
                 {
                     _events.OnLog("Live : calibration demandée.");
                     calibrateByTool = true;
+                }
+                if (call.Name == "move_head")
+                {
+                    if (call.Yaw is null && call.Pitch is null && call.Roll is null)
+                    {
+                        _events.OnLog("Live : move_head sans axe ignoré.");
+                    }
+                    else
+                    {
+                        _events.OnMoveHead?.Invoke(call.Yaw, call.Pitch, call.Roll);
+                    }
                 }
                 if (call.Name == "set_emotion" && call.Emotion is { } feeling)
                 {
@@ -341,6 +385,7 @@ internal sealed class LiveSession
                 _events.OnSpeaking(false);
                 _events.OnGlow(TabletApp.UI.VoiceGlow.Listening);
                 FlushRobotText(robotText, coupé: true);
+                LogModelTurnStats("coupé");
             }
             if (update.TurnComplete)
             {
@@ -363,6 +408,7 @@ internal sealed class LiveSession
                 {
                     FlushRobotText(robotText, coupé: false);
                 }
+                LogModelTurnStats("reçu");
             }
             if (update.GoAway)
             {
@@ -379,12 +425,28 @@ internal sealed class LiveSession
                 sb.Clear();
             }
         }
+
+        void LogModelTurnStats(string kind)
+        {
+            PlayerTurnStats stats = _player.TakeTurnStats();
+            _events.OnLog($"Live : tour {kind} : {_turnModelMsgs} msg, " +
+                $"{_turnModelBytes} octets ({_turnModelBytes / 48000.0:F1} s), " +
+                $"buffer {stats.BufferedBytes} o (pic {stats.PeakBytes} o), perdus {stats.DroppedChunks}.");
+            _turnModelBytes = 0;
+            _turnModelMsgs = 0;
+        }
     }
 
     // Semi-duplex strict : le micro est sourd pendant la parole du robot,
     // plus une queue couvrant la fin du buffer audio (pas d'auto-écoute).
     internal static readonly TimeSpan SpeakMuteTail = TimeSpan.FromMilliseconds(400);
     internal const int MinSpeechChunks = 4;
+    /// <summary>Sous ce RMS, on envoie du silence numérique (pas le souffle, qui boucle le VAD).</summary>
+    internal const double SilenceFloorRms = 150.0;
+    /// <summary>ZCR max d'une voix (voyelles ≤ 0,13 mesuré ; claquement = 1,0). Zéro coût Atom.</summary>
+    internal const double VoiceZcrThreshold = 0.25;
+    /// <summary>Silence avant fin de phrase (le VAD serveur, plus rapide, mène ; filet à 2,5 s).</summary>
+    internal static readonly TimeSpan DefaultTurnTimeout = TimeSpan.FromMilliseconds(2500);
 
     internal static bool ShouldMuteMic(bool speaking, DateTime speakEndedAt, DateTime now, TimeSpan tail)
     {
@@ -418,6 +480,16 @@ internal sealed class LiveSession
         }
     }
 
+    /// <summary>Réarme le suivi de tour (sous verrou).</summary>
+    private void ResetTurnTracking()
+    {
+        _turnCompleteSent = false;
+        _speechChunks = 0;
+        _turnAudioChunks = 0;
+        _turnPeakRms = 0;
+        _heardSpeech = false;
+    }
+
     /// <summary>Compteur d'audio envoyé pour le diagnostic par tour (sous verrou).</summary>
     private void NoteSent(byte[] chunk, double? rms = null)
     {
@@ -435,11 +507,13 @@ internal sealed class LiveSession
         List<byte[]> toSend = new();
         bool endTurn = false;
         bool endSession = false;
+        bool watchdog = false;
         lock (_sync)
         {
             DateTime now = DateTime.UtcNow;
-            bool muted = ShouldMuteMic(_speaking, _speakEndedAt, now, SpeakMuteTail);
-            bool speech = !muted && rms >= NAudioVoice.SpeechRmsThreshold;
+            bool muted = ShouldMuteMic(_speaking, _speakEndedAt, now, SpeakMuteTail) || !_player.IsDrained;
+            bool speech = !muted && rms >= NAudioVoice.SpeechRmsThreshold
+                && NAudioVoice.ComputeZcr(pcm16k, pcm16k.Length) < VoiceZcrThreshold;
             // Flux continu exigé par le serveur : ne jamais affamer le stream
             // (sinon les tours suivant le premier reviennent vides). Sourdine
             // = silence numérique (pas d'écho), jamais un trou.
@@ -469,8 +543,15 @@ internal sealed class LiveSession
                 {
                     _wasSpeech = false;
                 }
-                toSend.Add(pcm16k);
-                NoteSent(pcm16k, rms);
+                byte[] outgoing = rms < SilenceFloorRms ? new byte[pcm16k.Length] : pcm16k;
+                toSend.Add(outgoing);
+                NoteSent(outgoing, rms);
+            }
+            if (_speaking && now - _lastAudioAt >= _watchdogTimeout)
+            {
+                _speaking = false;
+                _speakEndedAt = DateTime.MinValue;
+                watchdog = true;
             }
             if (!muted && now - _lastSpeech > _idleTimeout)
             {
@@ -484,6 +565,7 @@ internal sealed class LiveSession
                 _turnCompleteSent = true;
                 _speechChunks = 0;
                 _dropAudio = false;
+                _mutedTurn = false;
                 endTurn = true;
             }
         }
@@ -504,6 +586,13 @@ internal sealed class LiveSession
             _events.OnLog("Live : silence prolongé, fin de session.");
             RequestStop();
         }
+        if (watchdog)
+        {
+            _player.Clear();
+            _events.OnSpeaking(false);
+            _events.OnGlow(TabletApp.UI.VoiceGlow.Listening);
+            _events.OnLog("Live : réponse bloquée, micro rouvert.");
+        }
     }
 
     private async Task SendAsync(string json)
@@ -511,10 +600,20 @@ internal sealed class LiveSession
         try
         {
             await _socket.SendAsync(json, CancellationToken.None).ConfigureAwait(false);
+            _sendFailures = 0;
         }
         catch
         {
-            // Envoi en tâche de fond : l'échec remontera via la boucle.
+            if (++_sendFailures == 1)
+            {
+                _events.OnLog("Live : échec d'envoi (1er).");
+            }
+            if (_sendFailures >= 5)
+            {
+                SendFailed = true;
+                _events.OnLog("Live : envois en échec répétés, fin de session.");
+                RequestStop();
+            }
         }
     }
 }

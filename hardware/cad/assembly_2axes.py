@@ -89,74 +89,62 @@ m_tablet = mat("TabletBody", (0.05, 0.05, 0.06), 0.2, 0.5)
 m_screen = mat("Screen", (0.02, 0.10, 0.18), 0.0, 0.4, (0.1, 0.55, 1.0), 2.0)
 
 # --- Statique : base + pan fixe + plot/roulement ---
-# Servo visse SOUS la platine kit : corps entre bois et platine, zero jour
+# Rework atelier (assemblage_2axes.blend) : positions monde exactes.
+# Socle bois 200x200 ep18.
 box("BaseBois", (0.20, 0.20, 0.018), (0, 0, 0.009), m_wood)
-box("PanBody", (0.0407, 0.0197, 0.036), (-0.0032, 0, 0.036), m_pan)
-box("PanEarL", (0.007, 0.0197, 0.004), (-0.027, 0, 0.052), m_pan)
-box("PanEarR", (0.007, 0.0197, 0.004), (0.0206, 0, 0.052), m_pan)
-# --- PanPivot (yaw, axe Z) : tout ce qui suit tourne en yaw ---
-pan_pivot = empty("PanPivot", (0, 0, 0.059))
-box("BracketBase", (0.060, 0.060, 0.002), (0, 0, -0.004), m_kit, parent=pan_pivot)
-box("TabL", (0.002, 0.020, 0.022), (-0.024, 0, 0.008), m_kit, parent=pan_pivot)
-box("TabR", (0.002, 0.020, 0.022), (0.024, 0, 0.008), m_kit, parent=pan_pivot)
-cyl("PivotL", 0.0025, 0.006, (-0.0265, 0, 0.018), m_brass, parent=pan_pivot, rot=(0, math.radians(90), 0))
-cyl("PivotR", 0.0025, 0.006, (0.0265, 0, 0.018), m_brass, parent=pan_pivot, rot=(0, math.radians(90), 0))
-box("MurOreille", (0.003, 0.020, 0.040), (-0.0195, 0, 0.016), m_kit, parent=pan_pivot)
-cyl("VisMur1", 0.0015, 0.010, (-0.0195, 0.005, 0.0273), m_steel, parent=pan_pivot, rot=(0, math.radians(90), 0))
-cyl("VisMur2", 0.0015, 0.010, (-0.0195, -0.005, 0.0273), m_steel, parent=pan_pivot, rot=(0, math.radians(90), 0))
-
-# U + tilt : le U tourne en pitch autour de l'arbre, le corps servo reste fixe
-tilt_pivot = empty("TiltPivot", (-0.027, 0, 0.054), parent=pan_pivot)
-cyl("PanArbre", 0.003, 0.008, (0, 0, -0.003), m_horn, parent=pan_pivot)
-cyl("PanHorn", 0.00975, 0.003, (0, 0, -0.0005), m_horn, parent=pan_pivot)
-# U photo1 : exterieur 56 / interieur 52, axe a 52 du socle, sommets arrondis.
-# Le U TOURNE en pitch (enfant TiltPivot), entraine par le palonnier.
-box("UFond", (0.056, 0.040, 0.002), (0.027, 0, -0.053), m_kit, parent=tilt_pivot)
-box("UArmL", (0.002, 0.040, 0.052), (0, 0, -0.026), m_kit, parent=tilt_pivot)
-box("UArmR", (0.002, 0.040, 0.052), (0.054, 0, -0.026), m_kit, parent=tilt_pivot)
-cyl("UArcL", 0.020, 0.0024, (0, 0, 0), m_kit, parent=tilt_pivot, rot=(0, math.radians(90), 0))
-cyl("UArcR", 0.020, 0.0024, (0.054, 0, 0), m_kit, parent=tilt_pivot, rot=(0, math.radians(90), 0))
-
-# Corps servo tilt FIXE (enfant PanPivot, visse au mur) : facon kit Amazon.
-# Seuls palonnier + U + pince + tablette tournent en pitch.
-box("TiltBody", (0.0366, 0.020, 0.0403), (-0.0087, 0, 0.05075), m_tilt, parent=pan_pivot)
-box("EarUp", (0.003, 0.013, 0.007), (-0.016, 0, 0.0742), m_tilt, parent=pan_pivot)
-box("EarDown", (0.003, 0.013, 0.007), (-0.016, 0, 0.0273), m_tilt, parent=pan_pivot)
-cyl("TiltArbre", 0.003, 0.010, (-0.002, 0, 0), m_horn, parent=tilt_pivot, rot=(0, math.radians(90), 0))
-cyl("TiltHorn", 0.00975, 0.003, (-0.0025, 0, 0), m_horn, parent=tilt_pivot, rot=(0, math.radians(90), 0))
-cyl("HornVis1", 0.0015, 0.010, (-0.003, 0.0065, 0), m_steel, parent=tilt_pivot, rot=(0, math.radians(90), 0))
-cyl("HornVis2", 0.0015, 0.010, (-0.003, -0.0065, 0), m_steel, parent=tilt_pivot, rot=(0, math.radians(90), 0))
-cyl("PalierTilt", 0.006, 0.004, (0.054, 0, 0), m_brass, parent=tilt_pivot, rot=(0, math.radians(90), 0))
-cyl("VisPalier", 0.0025, 0.032, (0.011, 0, 0.054), m_steel, parent=pan_pivot, rot=(0, math.radians(90), 0))
-# (trous oreilles valides en fiches ; pas de pastilles ici)
-# pince X a ressort derriere tablette (145-275 monde) : dos + 4 bras + crochets
-# + rotule et base 1/4 sous le centre (chaine X -> rotule -> base)
-box("PinceDos", (0.056, 0.008, 0.080), (0, -0.015, 0.097), m_sup, parent=tilt_pivot)
-_A = 0.5256
-for _sx, _sz, _ra in ((0.0198, 0.034, _A), (0.0198, -0.034, 3.1416 - _A),
-                      (-0.0198, 0.034, -_A), (-0.0198, -0.034, -(3.1416 - _A))):
-    box("PinceBras", (0.018, 0.007, 0.080), (_sx, -0.015, 0.097 + _sz), m_sup, parent=tilt_pivot, rot=(0, _ra, 0))
-for _hx in (-0.0395, 0.0395):
-    for _hz in (0.029, 0.165):
-        box("Crochet", (0.014, 0.008, 0.018), (_hx, -0.011, _hz), m_sup, parent=tilt_pivot)
-        _lz = _hz - 0.005 if _hz > 0.097 else _hz + 0.005
-        box("Levre", (0.014, 0.018, 0.007), (_hx, 0.006, _lz), m_sup, parent=tilt_pivot)
-box("PincePad", (0.046, 0.005, 0.062), (0, -0.007, 0.097), m_sup, parent=tilt_pivot)
-box("Coulisseau", (0.040, 0.006, 0.070), (0, -0.017, 0.125), m_sup, parent=tilt_pivot)
-# equerre d'entrainement : platine sur palonnier + bras lateral + pied boulonne
-box("EqPlatine", (0.003, 0.030, 0.030), (-0.0055, 0, 0), m_steel, parent=tilt_pivot)
-box("EqBras", (0.042, 0.008, 0.004), (-0.025, -0.006, 0.016), m_steel, parent=tilt_pivot)
-cyl("EqBoulon1", 0.0015, 0.014, (-0.036, -0.0075, 0.018), m_steel, parent=tilt_pivot)
-cyl("EqBoulon2", 0.0015, 0.014, (-0.042, -0.0075, 0.018), m_steel, parent=tilt_pivot)
-# boule + base 1/4 de la pince : chaine X -> rotule -> base (pas de collision)
-box("ColHaut", (0.020, 0.018, 0.030), (0, -0.026, 0.052), m_sup, parent=tilt_pivot)
-sph("Rotule", 0.011, (0, -0.030, 0.047), m_sup, parent=tilt_pivot)
-cyl("VisRotule", 0.004, 0.012, (0.014, -0.030, 0.047), m_steel, parent=tilt_pivot, rot=(0, math.radians(90), 0))
-cyl("Col14", 0.006, 0.020, (0, -0.030, 0.032), m_sup, parent=tilt_pivot)
-cyl("Base14", 0.016, 0.010, (0, -0.030, 0.023), m_sup, parent=tilt_pivot)
-cyl("Insert14", 0.005, 0.004, (0, -0.030, 0.025), m_steel, parent=tilt_pivot)
-box("Tablette", (0.216, 0.009, 0.130), (0, 0, 0.097), m_tablet, parent=tilt_pivot)
-box("Ecran", (0.196, 0.002, 0.110), (0, 0.0055, 0.097), m_screen, parent=tilt_pivot)
+# U cadre autour du pan (sol + mur + montants + bras plats).
+box("UFlasque", (0.040, 0.020, 0.002), (0.0032, 0, 0.018), m_kit)
+box("UBaseCourt", (0.040, 0.002, 0.042), (0.0032, 0.011, 0.017), m_kit)
+box("UBande", (0.008, 0.002, 0.028), (0.0272, 0.011, 0.038), m_kit)
+box("UBande.001", (0.008, 0.002, 0.028), (-0.0208, 0.011, 0.038), m_kit)
+box("UArmL", (0.008, 0.020, 0.002), (0.0272, 0, 0.051), m_kit)
+box("UArmR", (0.008, 0.020, 0.002), (-0.0208, 0, 0.051), m_kit)
+# Servo pan (stator, corps decale +3.2, arbre sur l'axe).
+box("PanBody", (0.0407, 0.0197, 0.036), (0.0032, 0, 0.038), m_pan)
+box("PanEarL", (0.007, 0.0197, 0.004), (0.027, 0, 0.054), m_pan)
+box("PanEarR", (0.007, 0.0197, 0.004), (-0.0206, 0, 0.054), m_pan)
+# --- PanPivot (yaw) : disque + arbre sur l'axe x=+6.4 ---
+pan_pivot = empty("PanPivot", (0.0064, 0, 0.063))
+cyl("PanArbre", 0.003, 0.008, (0, 0, -0.007), m_steel, parent=pan_pivot)
+cyl("PanHorn", 0.00975, 0.003, (0, 0, -0.0015), m_pan, parent=pan_pivot)
+# Chape base 55.6 (plaque sur le disque) + joues vers l'arbre.
+box("RDSHautPlaque", (0.0556, 0.020, 0.002), (-0.0027, 0, 0.001), m_tilt, parent=pan_pivot)
+box("RDSHautJoue", (0.002, 0.020, 0.0315), (0.0261, 0, 0.0157), m_tilt, parent=pan_pivot)
+box("RDSHautJoue.001", (0.002, 0.020, 0.0315), (-0.0315, 0, 0.0157), m_tilt, parent=pan_pivot)
+# Chape haute 44.5 + joues (coiffe au-dessus du servo).
+box("RDSBasPlaque", (0.0445, 0.020, 0.002), (-0.0027, 0, 0.063), m_tilt, parent=pan_pivot)
+box("RDSBasJoue", (0.002, 0.020, 0.027), (0.0205, 0, 0.0505), m_tilt, parent=pan_pivot)
+box("RDSBasJoue.001", (0.002, 0.020, 0.027), (-0.0259, 0, 0.0505), m_tilt, parent=pan_pivot)
+# Corps servo tilt (stator yaw, PAS de pitch : ne tourne pas en tangage).
+box("TiltBody", (0.040, 0.020, 0.040), (-0.0027, 0, 0.037), m_tilt, parent=pan_pivot)
+# --- TiltPivot (pitch) sur l'axe du palonnier ---
+tilt_pivot = empty("TiltPivot", (0.0252, 0, 0.029), parent=pan_pivot)
+cyl("TiltArbre", 0.003, 0.014, (-0.0096, 0, 0), m_steel, parent=tilt_pivot, rot=(0, math.radians(90), 0))
+cyl("TiltHorn", 0.00975, 0.003, (-0.0015, 0, 0), m_horn, parent=tilt_pivot, rot=(0, math.radians(90), 0))
+# Pince + tablette (rotor pitch, base 1/4 sur la plaque haute).
+cyl("Base14", 0.016, 0.010, (-0.0281, 0, 0.040), m_sup, parent=tilt_pivot)
+cyl("Insert14", 0.005, 0.004, (-0.0281, 0, 0.042), m_steel, parent=tilt_pivot)
+cyl("Col14", 0.006, 0.020, (-0.0281, 0, 0.049), m_sup, parent=tilt_pivot)
+sph("Rotule", 0.011, (-0.0281, 0, 0.064), m_sup, parent=tilt_pivot)
+cyl("VisRotule", 0.004, 0.012, (-0.0421, 0, 0.064), m_steel, parent=tilt_pivot, rot=(0, math.radians(90), 0))
+box("ColHaut", (0.020, 0.018, 0.030), (-0.0281, -0.004, 0.069), m_sup, parent=tilt_pivot)
+box("Coulisseau", (0.040, 0.006, 0.070), (-0.0281, -0.013, 0.142), m_sup, parent=tilt_pivot)
+box("PinceDos", (0.056, 0.008, 0.080), (-0.0281, -0.015, 0.114), m_sup, parent=tilt_pivot)
+box("PinceBras", (0.018, 0.007, 0.080), (-0.0479, -0.015, 0.148), m_sup, parent=tilt_pivot, rot=(0, 0.5254, 0))
+box("PinceBras.001", (0.018, 0.007, 0.080), (-0.0479, -0.015, 0.080), m_sup, parent=tilt_pivot, rot=(0, 2.616, 0))
+box("PinceBras.002", (0.018, 0.007, 0.080), (-0.0083, -0.015, 0.148), m_sup, parent=tilt_pivot, rot=(0, -0.5254, 0))
+box("PinceBras.003", (0.018, 0.007, 0.080), (-0.0083, -0.015, 0.080), m_sup, parent=tilt_pivot, rot=(0, -2.616, 0))
+box("Crochet", (0.014, 0.008, 0.018), (0.0114, -0.019, 0.046), m_sup, parent=tilt_pivot)
+box("Crochet.001", (0.014, 0.008, 0.018), (0.0114, -0.019, 0.182), m_sup, parent=tilt_pivot)
+box("Crochet.002", (0.014, 0.008, 0.018), (-0.0676, -0.019, 0.046), m_sup, parent=tilt_pivot)
+box("Crochet.003", (0.014, 0.008, 0.018), (-0.0676, -0.019, 0.182), m_sup, parent=tilt_pivot)
+box("Levre", (0.014, 0.018, 0.007), (0.0114, -0.032, 0.0455), m_sup, parent=tilt_pivot)
+box("Levre.001", (0.014, 0.018, 0.007), (0.0114, -0.032, 0.1825), m_sup, parent=tilt_pivot)
+box("Levre.002", (0.014, 0.018, 0.007), (-0.0676, -0.032, 0.0455), m_sup, parent=tilt_pivot)
+box("Levre.003", (0.014, 0.018, 0.007), (-0.0676, -0.032, 0.1825), m_sup, parent=tilt_pivot)
+box("PincePad", (0.046, 0.005, 0.062), (-0.0281, -0.023, 0.114), m_sup, parent=tilt_pivot)
+box("Tablette", (0.216, 0.009, 0.130), (-0.0281, -0.030, 0.114), m_tablet, parent=tilt_pivot)
+box("Ecran", (0.196, 0.002, 0.110), (-0.0281, -0.0355, 0.114), m_screen, parent=tilt_pivot)
 
 # --- Lumieres ---
 sun = bpy.data.lights.new("Sun", 'SUN')
@@ -176,7 +164,7 @@ cam = bpy.data.cameras.new("Cam")
 cam.lens = 50
 co = bpy.data.objects.new("Cam", cam)
 bpy.context.collection.objects.link(co)
-co.location = (0.55, -0.82, 0.40)
+co.location = (0.55, 0.82, 0.40)
 target = Vector((0 - co.location.x, 0 - co.location.y, 0.13 - co.location.z))
 co.rotation_euler = target.to_track_quat('-Z', 'Y').to_euler()
 bpy.context.scene.camera = co
@@ -188,7 +176,7 @@ bpy.context.scene.cycles.samples = 64
 bpy.context.scene.cycles.use_denoising = False
 bpy.context.scene.render.resolution_x = 1280
 bpy.context.scene.render.resolution_y = 720
-bpy.context.scene.render.filepath = r"C:/Users/mathias/Work/Projects/personal_bot/hardware/rendus/preview_2axes_arriere.png"
+bpy.context.scene.render.filepath = r"C:/Users/mathias/Work/Projects/personal_bot/hardware/rendus/preview_2axes.png"
 bpy.context.scene.render.image_settings.file_format = 'PNG'
 _demo = float(os.environ.get("TILT_DEMO", "0"))
 if _demo:

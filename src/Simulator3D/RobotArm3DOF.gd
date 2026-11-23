@@ -22,9 +22,8 @@ var _cam_pitch := deg_to_rad(12.0)
 var _cam_dist := 0.8
 const CAM_TARGET := Vector3(0, 0.15, 0.0)
 
-@onready var _pan_pivot: Node3D = $Head/PanPivot
-@onready var _tilt_pivot: Node3D = $Head/PanPivot/TiltPivot
-@onready var _roll_pivot: Node3D = $Head/PanPivot/TiltPivot/RollPivot
+@onready var _pan_pivot: Node3D = $Head/base/u_court_48/pan_mg996r/PanPivot
+@onready var _tilt_pivot: Node3D = $Head/base/u_court_48/pan_mg996r/PanPivot/TiltPivot
 @onready var _camera: Camera3D = $Camera3D
 
 
@@ -78,6 +77,8 @@ func _process(delta: float) -> void:
 			print("SIM-PEER closed")
 		else:
 			_drain()
+	# Clavier (debug) : fleches = yaw/pitch, R = neutre. Relatif ecran.
+	_keyboard_move(delta)
 	# Lissage vers la cible.
 	var k: float = minf(1.0, SMOOTH * delta)
 	if _track_active:
@@ -193,14 +194,45 @@ func _state() -> Dictionary:
 	}
 
 
+const KEY_SPEED := 30.0  # deg/s aux fleches (fenetre Godot au premier plan requise)
+var _key_last_print := 0
+
+
+func _keyboard_move(delta: float) -> void:
+	var dx := 0.0
+	var dy := 0.0
+	if Input.is_key_pressed(KEY_LEFT):
+		dx -= 1.0
+	if Input.is_key_pressed(KEY_RIGHT):
+		dx += 1.0
+	if Input.is_key_pressed(KEY_UP):
+		dy += 1.0
+	if Input.is_key_pressed(KEY_DOWN):
+		dy -= 1.0
+	if Input.is_key_pressed(KEY_R):
+		_target["yaw"] = 0.0
+		_target["pitch"] = 0.0
+		_target["roll"] = 0.0
+		_track_active = false
+	elif dx != 0.0 or dy != 0.0:
+		_track_active = false
+		_target["yaw"] = clampf(float(_target["yaw"]) + dx * KEY_SPEED * delta, LIMITS["yaw"][0], LIMITS["yaw"][1])
+		_target["pitch"] = clampf(float(_target["pitch"]) + dy * KEY_SPEED * delta, LIMITS["pitch"][0], LIMITS["pitch"][1])
+	else:
+		return
+	var now_ms: int = Time.get_ticks_msec()
+	if now_ms - _key_last_print > 500:
+		_key_last_print = now_ms
+		print("SIM-KEY yaw=%.1f pitch=%.1f" % [float(_target["yaw"]), float(_target["pitch"])])
+
+
 func _apply_pose() -> void:
 	if not is_node_ready():
 		return
 	_pan_pivot.rotation.y = deg_to_rad(float(_current["yaw"]))
 	# Ecran face -Z (modele kit reel) : pitch>0 = lever la tete = rotation.x positive.
 	_tilt_pivot.rotation.x = deg_to_rad(float(_current["pitch"]))
-	# BOM-budget 2 axes : pas de roll, pivot vide conserve pour compat protocole.
-	_roll_pivot.rotation.z = 0.0
+# 2 axes : pas de roll, le protocole reste inchange (roll force a 0).
 
 
 func _send(payload: Dictionary) -> void:

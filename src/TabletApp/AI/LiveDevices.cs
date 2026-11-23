@@ -164,11 +164,15 @@ internal sealed class LivePlayer : ILivePlayer
     private readonly RobotVoiceFilter _robot = new();
     private readonly BufferedWaveProvider _buffer;
     private bool _disposed;
+    private int _peakBuffered;
+    private int _dropped;
 
     public LivePlayer()
     {
+        // 30 s : l'audio serveur arrive par rafales ; les 5 s par défaut tronquaient les phrases longues.
         _buffer = new BufferedWaveProvider(new WaveFormat(24000, 16, 1))
         {
+            BufferDuration = TimeSpan.FromSeconds(30),
             DiscardOnBufferOverflow = true,
         };
         _output.Init(_buffer);
@@ -180,10 +184,28 @@ internal sealed class LivePlayer : ILivePlayer
         {
             _robot.Apply(pcm24k, 0, pcm24k.Length, 24000);
         }
+        if (_buffer.BufferedBytes + pcm24k.Length > _buffer.BufferLength)
+        {
+            _dropped++;
+        }
         _buffer.AddSamples(pcm24k, 0, pcm24k.Length);
+        if (_buffer.BufferedBytes > _peakBuffered)
+        {
+            _peakBuffered = _buffer.BufferedBytes;
+        }
     }
 
     public void Clear() => _buffer.ClearBuffer();
+
+    public bool IsDrained => _buffer.BufferedBytes == 0;
+
+    public PlayerTurnStats TakeTurnStats()
+    {
+        var stats = new PlayerTurnStats(_buffer.BufferedBytes, _peakBuffered, _dropped);
+        _peakBuffered = _buffer.BufferedBytes;
+        _dropped = 0;
+        return stats;
+    }
 
     public void Start()
     {
