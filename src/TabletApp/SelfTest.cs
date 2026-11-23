@@ -689,10 +689,10 @@ internal static class SelfTest
 
     private static bool CheckRobotVoice(List<string> log)
     {
-        // Filtre robot : silence préservé, effet borné, phase continue.
+        // Filtre robot : silence préservé, effet borné, phase continue (pitch 0 épinglé).
         byte[] silence = new byte[480];
-        new RobotVoiceFilter().Apply(silence, 0, silence.Length, 24000);
-        bool silenceOk = silence.All(b => b == 0);
+        int silenceProduced = new RobotVoiceFilter(0.0).Apply(silence, 0, silence.Length, 24000);
+        bool silenceOk = silenceProduced == silence.Length && silence.All(b => b == 0);
         byte[] loud = new byte[480];
         for (int i = 0; i < loud.Length; i += 2)
         {
@@ -700,9 +700,9 @@ internal static class SelfTest
             loud[i + 1] = 0x40;
         }
         byte[] once = (byte[])loud.Clone();
-        new RobotVoiceFilter().Apply(once, 0, once.Length, 24000);
+        new RobotVoiceFilter(0.0).Apply(once, 0, once.Length, 24000);
         byte[] twice = (byte[])loud.Clone();
-        var cont = new RobotVoiceFilter();
+        var cont = new RobotVoiceFilter(0.0);
         cont.Apply(twice, 0, 240, 24000);
         cont.Apply(twice, 240, 240, 24000);
         double rmsBefore = NAudioVoice.ComputeRms(loud, loud.Length);
@@ -715,9 +715,45 @@ internal static class SelfTest
         string customPath = Path.Combine(Path.GetTempPath(), "patate-voix-test.json");
         File.WriteAllText(customPath, "{\"Voice\": {\"RobotFilter\": false}}");
         bool customOk = !RobotVoiceFilter.LoadEnabled(customPath);
-        bool ok = silenceOk && boundedOk && changedOk && continuousOk && fallbackOk && customOk;
+        // Pitch +6 demi-tons (×1,4142) : 4800 o -> ~3396 o. Continu entre chunks :
+        // mêmes positions (mêmes comptes) et préfixe identique à l'octet
+        // (sauf le dernier échantillon du chunk, interpolé sans le suivant).
+        static byte[] FreshRamp()
+        {
+            byte[] ramp = new byte[4800];
+            for (int i = 0; i < ramp.Length; i += 2)
+            {
+                short s = (short)((i / 2 * 10) % 30000);
+                ramp[i] = (byte)(s & 0xFF);
+                ramp[i + 1] = (byte)((s >> 8) & 0xFF);
+            }
+            return ramp;
+        }
+        byte[] ratioBuf = FreshRamp();
+        int pitched = new RobotVoiceFilter(6.0).Apply(ratioBuf, 0, ratioBuf.Length, 24000);
+        bool ratioOk = Math.Abs(pitched - 3396) <= 4;
+        byte[] pitchOnce = FreshRamp();
+        byte[] pitchTwice = (byte[])pitchOnce.Clone();
+        int whole = new RobotVoiceFilter(3.0).Apply(pitchOnce, 0, pitchOnce.Length, 24000);
+        var split = new RobotVoiceFilter(3.0);
+        int first = split.Apply(pitchTwice, 0, pitchTwice.Length / 2, 24000);
+        int second = split.Apply(pitchTwice, pitchTwice.Length / 2, pitchTwice.Length / 2, 24000);
+        byte[] splitOut = pitchTwice.Take(first)
+            .Concat(pitchTwice.Skip(pitchTwice.Length / 2).Take(second)).ToArray();
+        bool prefixOk = pitchOnce.Take(first - 2).SequenceEqual(splitOut.Take(first - 2));
+        bool pitchContOk = whole == first + second && prefixOk;
+        string pitchPath = Path.Combine(Path.GetTempPath(), "patate-pitch-test.json");
+        File.WriteAllText(pitchPath, "{\"Voice\": {\"PitchSemitones\": 2.5}}");
+        string clampPath = Path.Combine(Path.GetTempPath(), "patate-pitch-clamp.json");
+        File.WriteAllText(clampPath, "{\"Voice\": {\"PitchSemitones\": 99}}");
+        bool pitchCfgOk = RobotVoiceFilter.LoadPitchSemitones(
+                Path.Combine(Path.GetTempPath(), "patate-pitch-absent.json")) == 0.0
+            && RobotVoiceFilter.LoadPitchSemitones(pitchPath) == 2.5
+            && RobotVoiceFilter.LoadPitchSemitones(clampPath) == RobotVoiceFilter.MaxPitchSemitones;
+        bool pitchOk = ratioOk && pitchContOk && pitchCfgOk;
+        bool ok = silenceOk && boundedOk && changedOk && continuousOk && fallbackOk && customOk && pitchOk;
         log.Add($"RobotVoice: silence={silenceOk}, borne={boundedOk}, effet={changedOk}, " +
-            $"continu={continuousOk}, config={fallbackOk && customOk} -> {(ok ? "OK" : "KO")}");
+            $"continu={continuousOk}, config={fallbackOk && customOk}, pitch={pitchOk} -> {(ok ? "OK" : "KO")}");
         return ok;
     }
 
@@ -1867,6 +1903,69 @@ internal static class SelfTest
             Console.WriteLine($"Synthèse impossible : {ex.Message} -> KO");
             return false;
         }
+    }
+
+    /// <summary>Flag --presynth : régénère les consignes d'enrôlement (voix TTS courante).</summary>
+    public static bool Presynth()
+    {
+        string? key;
+        try
+        {
+            key = TabletApp.AI.GeminiKey.Resolve();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Clé Gemini : {ex.Message} -> KO");
+            return false;
+        }
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            Console.WriteLine("Clé Gemini manquante -> KO");
+            return false;
+        }
+        string? dir = FindAudioSourceDir();
+        if (dir is null)
+        {
+            Console.WriteLine("Dossier src/TabletApp/Models/audio introuvable -> KO");
+            return false;
+        }
+        try
+        {
+            var speech = new TabletApp.AI.GeminiSpeech(key);
+            foreach ((string name, string text) in TabletApp.AI.WakeEnrollment.Prompts)
+            {
+                byte[] wav = speech.SpeakAsync(text, CancellationToken.None).GetAwaiter().GetResult();
+                if (wav.Length < 1000 || wav[0] != (byte)'R' || wav[1] != (byte)'I'
+                    || wav[2] != (byte)'F' || wav[3] != (byte)'F')
+                {
+                    Console.WriteLine($"{name} : réponse invalide ({wav.Length} o) -> KO");
+                    return false;
+                }
+                File.WriteAllBytes(Path.Combine(dir, name + ".wav"), wav);
+                Console.WriteLine($"{name}.wav : {wav.Length / 1024} Ko.");
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Presynth : {ex.Message} -> KO");
+            return false;
+        }
+    }
+
+    private static string? FindAudioSourceDir()
+    {
+        string? dir = AppContext.BaseDirectory;
+        for (int i = 0; i < 8 && dir is not null; i++)
+        {
+            string p = Path.Combine(dir, "src", "TabletApp", "Models", "audio");
+            if (Directory.Exists(p))
+            {
+                return p;
+            }
+            dir = Path.GetDirectoryName(dir);
+        }
+        return null;
     }
 
     public static bool SttFile(string? path)

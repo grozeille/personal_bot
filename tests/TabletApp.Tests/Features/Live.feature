@@ -16,6 +16,11 @@ Fonctionnalité: Session Live
     Quand la session live se déroule
     Alors l'interruption vide le haut-parleur
 
+  Scénario: Tour vide serveur ignoré
+    Soit un serveur live qui envoie un tour vide
+    Quand la session live se déroule
+    Alors le tour vide est ignoré sans transcript robot
+
   Scénario: Le robot sourd pendant sa propre parole
     Soit un serveur live qui parle puis termine son tour
     Quand la session live tourne en semi-duplex

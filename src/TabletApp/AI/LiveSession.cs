@@ -288,6 +288,14 @@ internal sealed class LiveSession
                 if (!_mutedTurn && !_dropAudio)
                 {
                     robotText.Append(said);
+                    if (IsEmptyTurnPrefix(robotText))
+                    {
+                        // Tour vide serveur (« <no speech>... ») : coupe le blip
+                        // en vol, ignore la fin du tour (le micro reste sourd).
+                        _player.Clear();
+                        _dropAudio = true;
+                        _events.OnLog("Live : tour vide ignoré.");
+                    }
                 }
             }
             if (update.ToolCalls.Count > 0)
@@ -425,6 +433,10 @@ internal sealed class LiveSession
                 sb.Clear();
             }
         }
+
+        /// <summary>Tour vide serveur : préfixe exact « &lt;no » en début de tour.</summary>
+        static bool IsEmptyTurnPrefix(StringBuilder sb) =>
+            sb.Length >= 3 && sb[0] == '<' && sb[1] == 'n' && sb[2] == 'o';
 
         void LogModelTurnStats(string kind)
         {

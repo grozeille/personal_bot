@@ -1,6 +1,6 @@
-# Rapport de tests BDD — 2026-11-23 00:16
+# Rapport de tests BDD — 2026-11-23 16:46
 
-*61 scénarios : 61 OK, 0 KO.*
+*62 scénarios : 62 OK, 0 KO.*
 
 ## Clignement des yeux — Clignement régulier sur 30 secondes — OK
 
@@ -147,6 +147,8 @@
 ## Session Live — Souffle coupé, voix faible transmise — OK
 
 ## Session Live — Tap pendant la réponse revient à l'écoute — OK
+
+## Session Live — Tour vide serveur ignoré — OK
 
 ## Test voix — Bonjour entendu affiche le cœur — OK
 

@@ -56,6 +56,16 @@ public sealed class LiveSteps
         _cancelAfterInterrupt = true;
     }
 
+    [Given("un serveur live qui envoie un tour vide")]
+    public void GivenTourVide()
+    {
+        _socket.Script(
+            """{"setupComplete":{}}""",
+            """{"serverContent":{"modelTurn":{"parts":[{"inlineData":{"mimeType":"audio/pcm;rate=24000","data":"QUI="}}]}}}""",
+            """{"serverContent":{"outputTranscription":{"text":"<no speech>{pause}"},"turnComplete":true}}""");
+        _cancelAfterInterrupt = false;
+    }
+
     [Given("un serveur live qui joue un son")]
     public void GivenJoueUnSon()
     {
@@ -227,6 +237,14 @@ public sealed class LiveSteps
     {
         Assert.True(_player.Clears >= 1);
         Assert.False(_speaking[^1]);
+    }
+
+    [Then("le tour vide est ignoré sans transcript robot")]
+    public void ThenTourVideIgnore()
+    {
+        Assert.True(_player.Clears >= 1);
+        Assert.Empty(_said);
+        Assert.Contains(_logs, msg => msg.Contains("tour vide ignoré"));
     }
 
     [Then("le son giggle est joué et le tool est acquitté")]

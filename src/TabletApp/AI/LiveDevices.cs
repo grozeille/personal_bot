@@ -180,15 +180,20 @@ internal sealed class LivePlayer : ILivePlayer
 
     public void PlayChunk(byte[] pcm24k)
     {
+        int count = pcm24k.Length;
         if (RobotVoiceFilter.Enabled)
         {
-            _robot.Apply(pcm24k, 0, pcm24k.Length, 24000);
+            count = _robot.Apply(pcm24k, 0, pcm24k.Length, 24000);
         }
-        if (_buffer.BufferedBytes + pcm24k.Length > _buffer.BufferLength)
+        if (count <= 0)
+        {
+            return;
+        }
+        if (_buffer.BufferedBytes + count > _buffer.BufferLength)
         {
             _dropped++;
         }
-        _buffer.AddSamples(pcm24k, 0, pcm24k.Length);
+        _buffer.AddSamples(pcm24k, 0, count);
         if (_buffer.BufferedBytes > _peakBuffered)
         {
             _peakBuffered = _buffer.BufferedBytes;

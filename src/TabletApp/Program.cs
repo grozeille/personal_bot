@@ -228,6 +228,12 @@ internal static class Program
             return;
         }
 
+        if (args.Contains("--presynth"))
+        {
+            Environment.Exit(SelfTest.Presynth() ? 0 : 1);
+            return;
+        }
+
         if (args.Contains("--wake-try"))
         {
             int at = Array.IndexOf(args, "--wake-try");

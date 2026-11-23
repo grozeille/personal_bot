@@ -14,16 +14,19 @@ internal sealed class GeminiSpeech
     private const string Endpoint = "https://generativelanguage.googleapis.com/v1beta/interactions";
     private const string TtsModel = "gemini-3.8-flash-lite-tts";
     private const string SttModel = "gemini-4-hydrogen";
-    private const string Voice = "Digital Assistant 10";
+    private const string DefaultVoice = "Digital Assistant 10";
     private const string ApiRevision = "2026-05-20";
 
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(60) };
 
     private readonly string _apiKey;
+    private readonly string _voice;
 
     public GeminiSpeech(string apiKey)
     {
         _apiKey = apiKey;
+        // Même voix que le Live (personnage cohérent), sinon l'historique.
+        _voice = LiveProtocol.ResolveVoice() ?? DefaultVoice;
     }
 
     /// <summary>Synthétise le texte : octets d'un WAV (24 kHz, mono, 16 bits).</summary>
@@ -44,7 +47,7 @@ internal sealed class GeminiSpeech
                 },
             },
             response_format = new { type = "audio" },
-            generation_config = new { speech_config = new[] { new { voice = Voice } } },
+            generation_config = new { speech_config = new[] { new { voice = _voice } } },
         });
         string json = await PostAsync(body, includeRevision: false, ct).ConfigureAwait(false);
         return ParseAudioResponse(json);
