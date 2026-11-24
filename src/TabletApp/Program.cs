@@ -95,6 +95,23 @@ internal static class Program
             return;
         }
 
+        if (args.Contains("--live-file"))
+        {
+            int at = Array.IndexOf(args, "--live-file");
+            string[] rest = at >= 0
+                ? args.Skip(at + 1).Where(a => !a.StartsWith("--")).ToArray()
+                : Array.Empty<string>();
+            string? path = rest.FirstOrDefault(a => !double.TryParse(a, out _));
+            double delay = 20;
+            string? num = rest.FirstOrDefault(a => double.TryParse(a, out _));
+            if (num is not null)
+            {
+                delay = double.Parse(num, System.Globalization.CultureInfo.InvariantCulture);
+            }
+            Environment.Exit(SelfTest.LiveFile(path, delay) ? 0 : 1);
+            return;
+        }
+
         if (args.Contains("--live-sim"))
         {
             int at = Array.IndexOf(args, "--live-sim");

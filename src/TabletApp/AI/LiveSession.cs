@@ -30,6 +30,7 @@ internal sealed record PlayerTurnStats(int BufferedBytes, int PeakBytes, int Dro
 internal interface ILivePlayer : IDisposable
 {
     void PlayChunk(byte[] pcm24k);
+    void PlayRaw(byte[] pcm24k);
     void Clear();
     bool IsDrained { get; }
     PlayerTurnStats TakeTurnStats();
@@ -49,7 +50,8 @@ internal sealed record LiveCallbacks(
     Action OnUserSpeech,
     Action<string> OnLog,
     Action? OnCalibrationRequested = null,
-    Action<double?, double?, double?>? OnMoveHead = null);
+    Action<double?, double?, double?>? OnMoveHead = null,
+    Func<string, CancellationToken, Task<string>>? OnSearchWikipedia = null);
 
 /// <summary>
 /// Session vocale Live : micro streamé, audio modèle joué, tools exécutés,
@@ -322,6 +324,39 @@ internal sealed class LiveSession
                 if (_seenToolIds.Count > 100)
                 {
                     _seenToolIds.Clear();
+                }
+                if (call.Name == "search_wikipedia" && call.Query is { Length: > 0 } query)
+                {
+                    // Recherche web : bloque la réception quelques secondes
+                    // (micro et lecture continuent sur leurs propres fils).
+                    string answer;
+                    if (_events.OnSearchWikipedia is { } search)
+                    {
+                        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(stop.Token);
+                        timeout.CancelAfter(TimeSpan.FromSeconds(15));
+                        try
+                        {
+                            answer = await search(query, timeout.Token).ConfigureAwait(false);
+                        }
+                        catch (OperationCanceledException) when (!stop.IsCancellationRequested)
+                        {
+                            answer = "Recherche expirée, réessaie.";
+                        }
+                        catch (Exception ex)
+                        {
+                            _events.OnLog($"Live : recherche en échec : {ex.Message}.");
+                            answer = "Recherche impossible pour le moment.";
+                        }
+                    }
+                    else
+                    {
+                        answer = "Recherche non disponible.";
+                    }
+                    _events.OnLog($"Live : recherche Wikipédia « {query} ».");
+                    await _socket.SendAsync(
+                        LiveProtocol.BuildToolResponse(call.Id, call.Name, answer),
+                        stop.Token).ConfigureAwait(false);
+                    continue;
                 }
                 if (call.Name == "end_conversation")
                 {

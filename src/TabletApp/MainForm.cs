@@ -557,7 +557,7 @@ internal sealed class MainForm : Form
                     byte[]? pcm = RobotSounds.Render(sound);
                     if (pcm is not null)
                     {
-                        player.PlayChunk(pcm);
+                        player.PlayRaw(pcm);
                     }
                     else
                     {
@@ -571,7 +571,10 @@ internal sealed class MainForm : Form
                 OnUserSpeech: () => Ui(() => _face.NotifyActivity()),
                 OnLog: VoiceLog.Info,
                 OnCalibrationRequested: () => _pendingCalibration = true,
-                OnMoveHead: (yaw, pitch, roll) => { _ = MoveHeadAsync(yaw, pitch, roll); }),
+                OnMoveHead: (yaw, pitch, roll) => { _ = MoveHeadAsync(yaw, pitch, roll); },
+                OnSearchWikipedia: async (query, ct) =>
+                    await new WikipediaSearch().SearchSummaryAsync(query, ct).ConfigureAwait(false)
+                    ?? $"Je n'ai rien trouvé sur {query}."),
             voiceName: LiveProtocol.ResolveVoice());
         _liveSession = session;
         try
@@ -735,7 +738,7 @@ internal sealed class MainForm : Form
                 VoiceLog.Info($"Son inconnu ignoré : {name}.");
                 return;
             }
-            await NAudioVoice.PlayAsync(RobotSounds.ToWav(pcm, 24000), CancellationToken.None);
+            await NAudioVoice.PlayAsync(RobotSounds.ToWav(pcm, 24000), CancellationToken.None, raw: true);
         }
         catch (Exception ex)
         {

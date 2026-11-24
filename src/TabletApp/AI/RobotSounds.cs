@@ -1,3 +1,5 @@
+using NAudio.Wave;
+
 namespace TabletApp.AI;
 
 /// <summary>
@@ -6,9 +8,59 @@ namespace TabletApp.AI;
 /// les sons système (bâillement, réveil, erreur) joués par l'app, et la
 /// palette <see cref="Names"/> jouable par le LLM (tool play_sound en Live,
 /// champ "sound" en unaire). 100 % déterministe (bruit à graine fixe).
+/// Exception : "prout" joue un vrai sample pris au hasard parmi
+/// Models/audio/prout-*.wav (myinstants : kaue79, christopher329, SnapppyTurtle,
+/// shober — usage personnel/familial uniquement, vérifier la licence avant
+/// toute redistribution), avec repli sur la synthèse si absent.
 /// </summary>
 internal static class RobotSounds
 {
+    private static readonly Lazy<IReadOnlyList<byte[]>> ProutFiles = new(LoadProutFiles);
+    private static readonly Random ProutPick = new();
+    private static readonly object ProutLock = new();
+
+    /// <summary>Samples prout réels (PCM 24 kHz mono), liste vide si aucun.</summary>
+    private static IReadOnlyList<byte[]> LoadProutFiles()
+    {
+        var list = new List<byte[]>();
+        try
+        {
+            string dir = Path.Combine(AppContext.BaseDirectory, "Models", "audio");
+            if (!Directory.Exists(dir))
+            {
+                return list;
+            }
+            foreach (string path in Directory.GetFiles(dir, "prout-*.wav").OrderBy(p => p))
+            {
+                try
+                {
+                    using var reader = new WaveFileReader(path);
+                    if (reader.WaveFormat.Encoding != WaveFormatEncoding.Pcm
+                        || reader.WaveFormat.BitsPerSample != 16 || reader.WaveFormat.Channels != 1
+                        || reader.WaveFormat.SampleRate != SampleRate)
+                    {
+                        continue;
+                    }
+                    byte[] pcm = new byte[reader.Length];
+                    int read = reader.Read(pcm, 0, pcm.Length);
+                    if (read > 1000)
+                    {
+                        list.Add(pcm[..read]);
+                    }
+                }
+                catch
+                {
+                    // Fichier illisible : ignoré, les autres restent.
+                }
+            }
+        }
+        catch
+        {
+            // Dossier illisible : repli synthèse.
+        }
+        return list;
+    }
+
     internal const int SampleRate = 24000;
 
     /// <summary>Palette jouable par le LLM (doit matcher le prompt).</summary>
@@ -20,6 +72,16 @@ internal static class RobotSounds
     /// <summary>Rend un son nommé, ou null si inconnu (appelant silencieux).</summary>
     internal static byte[]? Render(string name, int sampleRate = SampleRate)
     {
+        if (name == "prout" && sampleRate == SampleRate && ProutFiles.Value.Count > 0)
+        {
+            int pick;
+            lock (ProutLock)
+            {
+                pick = ProutPick.Next(ProutFiles.Value.Count);
+            }
+            // Copie : le filtre voix pitch/ring modifie le tampon en place.
+            return (byte[])ProutFiles.Value[pick].Clone();
+        }
         short[] samples = name switch
         {
             "giggle" => Concat(

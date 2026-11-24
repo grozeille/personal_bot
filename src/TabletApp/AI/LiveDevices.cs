@@ -185,6 +185,14 @@ internal sealed class LivePlayer : ILivePlayer
         {
             count = _robot.Apply(pcm24k, 0, pcm24k.Length, 24000);
         }
+        AddToBuffer(pcm24k, count);
+    }
+
+    /// <summary>Effets sonores : jamais filtrés (sons finis, pas de la voix).</summary>
+    public void PlayRaw(byte[] pcm24k) => AddToBuffer(pcm24k, pcm24k.Length);
+
+    private void AddToBuffer(byte[] pcm, int count)
+    {
         if (count <= 0)
         {
             return;
@@ -193,7 +201,7 @@ internal sealed class LivePlayer : ILivePlayer
         {
             _dropped++;
         }
-        _buffer.AddSamples(pcm24k, 0, count);
+        _buffer.AddSamples(pcm, 0, count);
         if (_buffer.BufferedBytes > _peakBuffered)
         {
             _peakBuffered = _buffer.BufferedBytes;

@@ -53,7 +53,7 @@ internal static class SelfTest
             & CheckExpression(log) & CheckBlinkGating(log) & CheckFaceComplete(log)
             & CheckSteadyYawn(log) & CheckFaceEquivalence(log) & CheckIdleSleep(log)
             & CheckGeminiVoice(log) & CheckSpeakingMouth(log) & CheckVoiceActivity(log)
-            & CheckGeminiBrain(log) & CheckVoiceGlow(log) & CheckWakeWord(log)
+            & CheckGeminiBrain(log) & CheckWikipedia(log) & CheckVoiceGlow(log) & CheckWakeWord(log)
             & CheckLiveMessages(log) & CheckRobotVoice(log) & CheckRobotSounds(log) & CheckMotionOptions(log);
         RenderFrames(log);
         RenderExpressionSheet(log);
@@ -511,7 +511,8 @@ internal static class SelfTest
             && GeminiBrain.DefaultPersonality.Contains("Sujets interdits")
             && GeminiBrain.BuildSystemPrompt(GeminiBrain.DefaultPersonality).Contains("\"reply\"") && GeminiBrain.BuildSystemPrompt(GeminiBrain.DefaultPersonality).Contains("\"emotion\"")
             && GeminiBrain.BuildLivePrompt(GeminiBrain.DefaultPersonality).Contains("set_emotion")
-            && GeminiBrain.BuildLivePrompt(GeminiBrain.DefaultPersonality).Contains("play_fart");
+            && GeminiBrain.BuildLivePrompt(GeminiBrain.DefaultPersonality).Contains("play_fart")
+            && GeminiBrain.BuildLivePrompt("X").Contains("search_wikipedia");
         (string fallbackText, bool fallbackCustom) = GeminiBrain.ResolvePersonality(
             Path.Combine(Path.GetTempPath(), "patate-config-absente.json"));
         promptOk = promptOk && !fallbackCustom && fallbackText == GeminiBrain.DefaultPersonality;
@@ -523,6 +524,26 @@ internal static class SelfTest
         bool ok = fullOk && wrappedOk && bareOk && noEmotionOk && emptyOk && inputOk && promptOk && soundOk && paletteOk;
         log.Add($"GeminiBrain: réponse={fullOk && wrappedOk && bareOk && noEmotionOk && emptyOk}, prompt={promptOk}, son={soundOk}, palette={paletteOk}, " +
             $"entrée={inputOk} -> {(ok ? "OK" : "KO")}");
+        return ok;
+    }
+
+    private static bool CheckWikipedia(List<string> log)
+    {
+        // Recherche Wikipédia : parsing seul, sans réseau (fixtures figées).
+        string? title = WikipediaSearch.ParseOpensearchTitle(
+            "[\"pingu\",[\"Pingouin\"],[\"oiseau marin\"],[\"https://fr.wikipedia.org/wiki/Pingouin\"]]");
+        string? none = WikipediaSearch.ParseOpensearchTitle("[\"x\",[],[],[]]");
+        string? bad = WikipediaSearch.ParseOpensearchTitle("pas du json");
+        string? text = WikipediaSearch.ParseExtract(
+            "{\"query\":{\"pages\":{\"123\":{\"extract\":\"Le pingouin vole sous l'eau.\"}}}}");
+        string? missing = WikipediaSearch.ParseExtract("{\"query\":{\"pages\":{\"-1\":{\"missing\":\"\"}}}}");
+        string? broken = WikipediaSearch.ParseExtract("{}");
+        bool titleOk = title == "Pingouin";
+        bool noneOk = none is null && bad is null;
+        bool textOk = text == "Le pingouin vole sous l'eau.";
+        bool missingOk = missing is null && broken is null;
+        bool ok = titleOk && noneOk && textOk && missingOk;
+        log.Add($"Wikipedia: titre={titleOk}, extrait={textOk}, vide={noneOk && missingOk} -> {(ok ? "OK" : "KO")}");
         return ok;
     }
 
@@ -675,15 +696,17 @@ internal static class SelfTest
             renderOk = renderOk && RobotSounds.Render(sys) is { Length: > 0 };
         }
         renderOk = renderOk && RobotSounds.Render("prout") is { Length: > 0 };
+        bool fileOk = Directory.GetFiles(Path.Combine(
+            AppContext.BaseDirectory, "Models", "audio"), "prout-*.wav").Length >= 1;
         bool unknownOk = RobotSounds.Render("farfelu") is null;
         byte[]? giggle = RobotSounds.Render("giggle");
         byte[] wav = RobotSounds.ToWav(giggle!, 24000);
         bool wavOk = wav.Length == giggle!.Length + 44
             && wav[0] == (byte)'R' && wav[1] == (byte)'I' && wav[2] == (byte)'F' && wav[3] == (byte)'F';
         bool stableOk = RobotSounds.Render("baillement")!.SequenceEqual(RobotSounds.Render("baillement")!);
-        bool ok = namesOk && renderOk && unknownOk && wavOk && stableOk;
+        bool ok = namesOk && renderOk && unknownOk && wavOk && stableOk && fileOk;
         log.Add($"RobotSounds: palette={namesOk && renderOk}, inconnu={unknownOk}, " +
-            $"wav={wavOk}, stable={stableOk} -> {(ok ? "OK" : "KO")}");
+            $"wav={wavOk}, stable={stableOk}, fichier={fileOk} -> {(ok ? "OK" : "KO")}");
         return ok;
     }
 
@@ -1553,6 +1576,147 @@ internal static class SelfTest
         }
     }
 
+    /// <summary>
+    /// <summary>
+    /// Flag --live-file [wav] [delai] : vraie session Live avec micro rejoué
+    /// depuis un WAV (16 kHz mono), pour tester le comportement modèle (tools)
+    /// sans parler. Le fichier démarre après delai secondes (défaut 20, après
+    /// la salutation et son éventuel 2e tour). Journal dans
+    /// %TEMP%\livefile-test.txt (avec verdict WIKI-CALL). true si déroulée.
+    /// </summary>
+    public static bool LiveFile(string? path, double delaySec = 20)
+    {
+        path ??= Path.Combine(Path.GetTempPath(), "live-question.wav");
+        string? key;
+        try
+        {
+            key = TabletApp.AI.GeminiKey.Resolve();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Clé Gemini : {ex.Message} -> KO");
+            return false;
+        }
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            Console.WriteLine("Clé Gemini manquante -> KO");
+            return false;
+        }
+        if (!TryLoadMono16k(path, out float[]? samples) || samples is null)
+        {
+            return false;
+        }
+        string report = Path.Combine(Path.GetTempPath(), "livefile-test.txt");
+        File.WriteAllText(report, $"LiveFile : {path} ({samples.Length / 16000.0:F1} s){Environment.NewLine}");
+        void log(string line)
+        {
+            Console.WriteLine(line);
+            File.AppendAllText(report, line + Environment.NewLine);
+        }
+        try
+        {
+            var socket = new TabletApp.AI.LiveClientWebSocket();
+            using var mic = new FileLiveMic(samples, TimeSpan.FromSeconds(Math.Clamp(delaySec, 0, 120)));
+            using var player = new SimPlayer();
+            bool wikiCalled = false;
+            var session = new TabletApp.AI.LiveSession(
+                key, TabletApp.AI.GeminiBrain.LiveSystemPrompt,
+                TabletApp.AI.GeminiBrain.EmotionNames, TabletApp.AI.RobotSounds.Names,
+                TabletApp.AI.GeminiBrain.GestureNames,
+                socket, mic, player,
+                new TabletApp.AI.LiveCallbacks(
+                    emotion => log("  Emotion : " + emotion),
+                    sound => log("  Son : " + sound),
+                    gesture => log("  Geste : " + gesture),
+                    heard => log("  Entendu : '" + heard + "'"),
+                    said => log("  Robot : " + said),
+                    _ => { },
+                    _ => { },
+                    () => { },
+                    msg => { log("  LOG: " + msg); if (msg.Contains("search_wikipedia")) wikiCalled = true; },
+                    null, null,
+                    async (query, ct) => await new TabletApp.AI.WikipediaSearch().SearchSummaryAsync(query, ct).ConfigureAwait(false)
+                        ?? $"Je n'ai rien trouvé sur {query}."),
+                idleTimeout: TimeSpan.FromSeconds(30),
+                voiceName: TabletApp.AI.LiveProtocol.ResolveVoice());
+            session.RunAsync(CancellationToken.None).GetAwaiter().GetResult();
+            log("WIKI-CALL: " + (wikiCalled ? "oui" : "non"));
+            return true;
+        }
+        catch (Exception ex)
+        {
+            log("ERREUR : " + ex.Message + " -> KO");
+            return false;
+        }
+    }
+
+    /// <summary>Micro rejouant des échantillons 16 kHz en temps réel, puis silence.</summary>
+    private sealed class FileLiveMic : TabletApp.AI.ILiveMic
+    {
+        private readonly byte[][] _chunks;
+        private readonly int _silentFrames;
+        private System.Threading.Timer? _timer;
+        private int _frame;
+        private bool _disposed;
+
+        public FileLiveMic(float[] samples, TimeSpan startDelay)
+        {
+            const int frame = 1600;
+            var chunks = new List<byte[]>();
+            for (int at = 0; at + frame <= samples.Length; at += frame)
+            {
+                byte[] bytes = new byte[frame * 2];
+                for (int i = 0; i < frame; i++)
+                {
+                    short v = (short)Math.Clamp(samples[at + i] * 32768.0, short.MinValue, short.MaxValue);
+                    bytes[i * 2] = (byte)(v & 0xFF);
+                    bytes[i * 2 + 1] = (byte)((v >> 8) & 0xFF);
+                }
+                chunks.Add(bytes);
+            }
+            _chunks = chunks.ToArray();
+            _silentFrames = Math.Max(0, (int)(startDelay.TotalMilliseconds / 100));
+        }
+
+        public event Action<byte[]>? Chunk;
+
+        public void Start()
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            _timer ??= new System.Threading.Timer(_ => Push(), null, 0, 100);
+        }
+
+        public void Stop()
+        {
+            _timer?.Change(Timeout.Infinite, Timeout.Infinite);
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+            _disposed = true;
+            _timer?.Dispose();
+            _timer = null;
+        }
+
+        private void Push()
+        {
+            int f = Interlocked.Increment(ref _frame) - 1;
+            int fileIndex = f - _silentFrames;
+            byte[] chunk = fileIndex >= 0 && fileIndex < _chunks.Length ? _chunks[fileIndex] : new byte[3200];
+            try
+            {
+                Chunk?.Invoke(chunk);
+            }
+            catch
+            {
+            }
+        }
+    }
+
     private sealed class SimMic : TabletApp.AI.ILiveMic
     {
 #pragma warning disable CS0067 // Jamais levé : le sim injecte via FeedTestChunk.
@@ -1572,6 +1736,9 @@ internal static class SelfTest
     private sealed class SimPlayer : TabletApp.AI.ILivePlayer
     {
         public void PlayChunk(byte[] pcm24k)
+        {
+        }
+        public void PlayRaw(byte[] pcm24k)
         {
         }
         public void Clear()

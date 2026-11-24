@@ -1,6 +1,6 @@
-# Rapport de tests BDD — 2026-11-23 16:46
+# Rapport de tests BDD — 2026-11-23 21:07
 
-*62 scénarios : 62 OK, 0 KO.*
+*63 scénarios : 63 OK, 0 KO.*
 
 ## Clignement des yeux — Clignement régulier sur 30 secondes — OK
 
@@ -139,6 +139,8 @@
 ## Session Live — Micro fermé tant que le haut-parleur joue — OK
 
 ## Session Live — Prout demandé joue un son au lieu de la voix — OK
+
+## Session Live — Recherche Wikipédia renvoie un résumé — OK
 
 ## Session Live — Réponse bloquée rouverte par le watchdog — OK
 

@@ -66,6 +66,15 @@ public sealed class LiveSteps
         _cancelAfterInterrupt = false;
     }
 
+    [Given("un serveur live qui cherche sur Wikipédia")]
+    public void GivenChercheWiki()
+    {
+        _socket.Script(
+            """{"setupComplete":{}}""",
+            """{"toolCall":{"functionCalls":[{"id":"cw","name":"search_wikipedia","args":{"query":"pingouin"}}]}}""");
+        _cancelAfterInterrupt = false;
+    }
+
     [Given("un serveur live qui joue un son")]
     public void GivenJoueUnSon()
     {
@@ -151,7 +160,15 @@ public sealed class LiveSteps
             _socket, _mic, _player,
             new LiveCallbacks(
                 OnEmotion: emotion => _emotions.Add(emotion),
-                OnSound: sound => _sounds.Add(sound),
+                OnSound: sound =>
+                {
+                    _sounds.Add(sound);
+                    byte[]? pcm = RobotSounds.Render(sound);
+                    if (pcm is not null)
+                    {
+                        _player.PlayRaw(pcm);
+                    }
+                },
                 OnHeardTranscript: text => _heard.Add(text),
                 OnRobotTranscript: text => _said.Add(text),
                 OnSpeaking: speaking => _speaking.Add(speaking),
@@ -160,7 +177,8 @@ public sealed class LiveSteps
                 OnUserSpeech: () => { },
                 OnLog: msg => _logs.Add(msg),
                 OnCalibrationRequested: () => _calibrationRequested = true,
-                OnMoveHead: (yaw, pitch, roll) => _moved.Add((yaw, pitch, roll))),
+                OnMoveHead: (yaw, pitch, roll) => _moved.Add((yaw, pitch, roll)),
+                OnSearchWikipedia: (q, ct) => Task.FromResult("RESUME:" + q)),
             idleTimeout: TimeSpan.FromMilliseconds(300),
             turnTimeout: TimeSpan.FromMilliseconds(150));
         Task run = session.RunAsync(cts.Token);
@@ -205,7 +223,7 @@ public sealed class LiveSteps
         Assert.Contains(_socket.Sent, json =>
             json.Contains("models/gemini-3.8-live")
             && json.Contains("set_emotion") && json.Contains("SYS")
-            && json.Contains("fr-FR"));
+            && json.Contains("fr-FR") && json.Contains("search_wikipedia"));
     }
 
     [Then("le robot salue, joue l'audio et répond au tool")]
@@ -247,11 +265,18 @@ public sealed class LiveSteps
         Assert.Contains(_logs, msg => msg.Contains("tour vide ignoré"));
     }
 
+    [Then("le résumé Wikipédia est renvoyé au modèle")]
+    public void ThenWiki()
+    {
+        Assert.Contains(_socket.Sent, json => json.Contains("RESUME:pingouin") && json.Contains("\"cw\""));
+    }
+
     [Then("le son giggle est joué et le tool est acquitté")]
     public void ThenSon()
     {
         Assert.Equal(new[] { "giggle" }, _sounds.ToArray());
         Assert.Contains(_socket.Sent, json => json.Contains("\"c9\""));
+        Assert.True(_player.PlayedRaw.Count > 0);
     }
 
     [When("le micro capte un bruit bref puis le silence")]

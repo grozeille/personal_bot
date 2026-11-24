@@ -21,6 +21,11 @@ Fonctionnalité: Session Live
     Quand la session live se déroule
     Alors le tour vide est ignoré sans transcript robot
 
+  Scénario: Recherche Wikipédia renvoie un résumé
+    Soit un serveur live qui cherche sur Wikipédia
+    Quand la session live se déroule
+    Alors le résumé Wikipédia est renvoyé au modèle
+
   Scénario: Le robot sourd pendant sa propre parole
     Soit un serveur live qui parle puis termine son tour
     Quand la session live tourne en semi-duplex

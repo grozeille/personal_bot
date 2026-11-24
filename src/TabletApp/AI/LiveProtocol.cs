@@ -4,7 +4,7 @@ namespace TabletApp.AI;
 
 /// <summary>Appel d'outil reçu (set_emotion : Emotion renseigné ; move_head : Yaw/Pitch/Roll).</summary>
 internal sealed record LiveToolCall(string Id, string Name, string? Emotion, string? Sound, string? Gesture,
-    double? Yaw = null, double? Pitch = null, double? Roll = null);
+    double? Yaw = null, double? Pitch = null, double? Roll = null, string? Query = null);
 
 /// <summary>Mise à jour serveur décodée (plusieurs aspects peuvent coexister).</summary>
 internal sealed record LiveServerUpdate(
@@ -169,6 +169,20 @@ internal static class LiveProtocol
                             },
                             new
                             {
+                                name = "search_wikipedia",
+                                description = "Cherche un sujet sur Wikipédia en français et renvoie le résumé.",
+                                parameters = new
+                                {
+                                    type = "OBJECT",
+                                    properties = new
+                                    {
+                                        query = new { type = "STRING", description = "Le sujet à chercher.", },
+                                    },
+                                    required = new[] { "query" },
+                                },
+                            },
+                            new
+                            {
                                 name = "move_head",
                                 description = "Tourne la tête vers une pose (yaw : + vers sa gauche ; pitch : + levée ; roll : + penchée à sa droite). Au moins un axe. La pose est tenue jusqu'au prochain mouvement.",
                                 parameters = new
@@ -237,6 +251,24 @@ internal static class LiveProtocol
             },
         });
 
+    /// <summary>Réponse de tool avec contenu (recherche, skill...).</summary>
+    public static string BuildToolResponse(string id, string name, string result) =>
+        JsonSerializer.Serialize(new
+        {
+            toolResponse = new
+            {
+                functionResponses = new[]
+                {
+                    new
+                    {
+                        id,
+                        name,
+                        response = new { result },
+                    },
+                },
+            },
+        });
+
     public static LiveServerUpdate ParseUpdate(string json)
     {
         using var doc = JsonDocument.Parse(json);
@@ -256,7 +288,7 @@ internal static class LiveProtocol
                 string name = call.TryGetProperty("name", out JsonElement nameEl)
                     ? nameEl.GetString() ?? "" : "";
                 list.Add(new LiveToolCall(id, name, ReadEmotion(call), ReadSound(call), ReadGesture(call),
-                    ReadAxis(call, "yaw"), ReadAxis(call, "pitch"), ReadAxis(call, "roll")));
+                    ReadAxis(call, "yaw"), ReadAxis(call, "pitch"), ReadAxis(call, "roll"), ReadArg(call, "query")));
             }
             return LiveServerUpdate.Empty with { ToolCalls = list };
         }
@@ -348,6 +380,38 @@ internal static class LiveProtocol
             {
                 using var doc = JsonDocument.Parse(encoded);
                 if (doc.RootElement.TryGetProperty("gesture", out JsonElement nested)
+                    && nested.GetString() is { Length: > 0 } nestedWanted)
+                {
+                    return nestedWanted;
+                }
+            }
+            catch (JsonException)
+            {
+            }
+        }
+        return null;
+    }
+
+    /// <summary>Lit un argument chaîne (args objet ou stringifiés).</summary>
+    private static string? ReadArg(JsonElement call, string key)
+    {
+        if (!call.TryGetProperty("args", out JsonElement args))
+        {
+            return null;
+        }
+        if (args.ValueKind == JsonValueKind.Object
+            && args.TryGetProperty(key, out JsonElement direct)
+            && direct.GetString() is { Length: > 0 } wanted)
+        {
+            return wanted;
+        }
+        if (args.ValueKind == JsonValueKind.String
+            && args.GetString() is { Length: > 0 } encoded)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(encoded);
+                if (doc.RootElement.TryGetProperty(key, out JsonElement nested)
                     && nested.GetString() is { Length: > 0 } nestedWanted)
                 {
                     return nestedWanted;

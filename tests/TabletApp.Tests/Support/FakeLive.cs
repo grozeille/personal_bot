@@ -103,6 +103,10 @@ internal sealed class FakeLivePlayer : ILivePlayer
 
     public void PlayChunk(byte[] pcm24k) => Played.AddRange(pcm24k);
 
+    public List<byte> PlayedRaw { get; } = new();
+
+    public void PlayRaw(byte[] pcm24k) => PlayedRaw.AddRange(pcm24k);
+
     public void Clear() => Clears++;
 
     public bool Drained { get; set; } = true;
