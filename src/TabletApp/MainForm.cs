@@ -573,6 +573,16 @@ internal sealed class MainForm : Form
                 OnGlow: glow => Ui(() => _face.Glow = glow),
                 OnUserSpeech: () => Ui(() => _face.NotifyActivity()),
                 OnLog: VoiceLog.Info,
+                OnTakePhoto: async (camera, ct) =>
+                {
+                    var facing = string.Equals(camera, "back", StringComparison.OrdinalIgnoreCase)
+                        ? TabletApp.Vision.CameraFacing.Back
+                        : TabletApp.Vision.CameraFacing.Front;
+                    var watch = System.Diagnostics.Stopwatch.StartNew();
+                    var photo = await TabletApp.Vision.CameraCapture.CaptureJpegWithInfoAsync(facing, ct: ct).ConfigureAwait(false);
+                    VoiceLog.Info($"Photo ({camera}, {photo.DeviceName}) : {photo.Jpeg.Length / 1024} Ko en {watch.Elapsed.TotalSeconds:F1} s.");
+                    return photo.Jpeg;
+                },
                 OnCalibrationRequested: () => _pendingCalibration = true,
                 OnMoveHead: (yaw, pitch, roll) => { _ = MoveHeadAsync(yaw, pitch, roll); },
                 OnSearchWikipedia: async (query, ct) =>

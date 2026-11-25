@@ -245,6 +245,30 @@ internal static class Program
             return;
         }
 
+        if (args.Contains("--photo"))
+        {
+            int at = Array.IndexOf(args, "--photo");
+            string[] rest = at >= 0
+                ? args.Skip(at + 1).Where(a => !a.StartsWith("--")).ToArray()
+                : Array.Empty<string>();
+            string? camera = null;
+            string? path = null;
+            foreach (string arg in rest)
+            {
+                if (arg.Equals("front", StringComparison.OrdinalIgnoreCase)
+                    || arg.Equals("back", StringComparison.OrdinalIgnoreCase))
+                {
+                    camera = arg;
+                }
+                else
+                {
+                    path = arg;
+                }
+            }
+            Environment.Exit(SelfTest.Photo(camera, path) ? 0 : 1);
+            return;
+        }
+
         if (args.Contains("--presynth"))
         {
             Environment.Exit(SelfTest.Presynth() ? 0 : 1);

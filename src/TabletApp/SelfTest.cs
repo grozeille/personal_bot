@@ -2736,6 +2736,35 @@ internal static class SelfTest
         return pcm;
     }
 
+    public static bool Photo(string? cameraArg, string? outputPath)
+    {
+        AttachConsole(-1);
+        var facing = string.Equals(cameraArg, "back", StringComparison.OrdinalIgnoreCase)
+            ? TabletApp.Vision.CameraFacing.Back
+            : TabletApp.Vision.CameraFacing.Front;
+        string path = outputPath ?? Path.Combine(Path.GetTempPath(), $"tabletapp-photo-{facing.ToString().ToLowerInvariant()}.jpg");
+        try
+        {
+            IReadOnlyList<TabletApp.Vision.CameraDeviceInfo> cams =
+                TabletApp.Vision.CameraCapture.ListCamerasAsync().GetAwaiter().GetResult();
+            Console.WriteLine($"Caméras détectées : {cams.Count}");
+            foreach (var c in cams)
+            {
+                Console.WriteLine($"  - {c.Name} ({c.Facing?.ToString() ?? "inconnue"})");
+            }
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var photo = TabletApp.Vision.CameraCapture.CaptureJpegWithInfoAsync(facing).GetAwaiter().GetResult();
+            File.WriteAllBytes(path, photo.Jpeg);
+            Console.WriteLine($"Photo ({facing}, {photo.DeviceName}) : {photo.Jpeg.Length / 1024} Ko en {sw.Elapsed.TotalSeconds:F2} s -> {path}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Photo en échec : {ex.Message}");
+            return false;
+        }
+    }
+
     public static bool Perf()
     {
         AttachConsole(-1);

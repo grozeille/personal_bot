@@ -128,3 +128,8 @@ Fonctionnalité: Session Live
     Soit un serveur live silencieux
     Quand les envois échouent
     Alors la session s'arrête en demandant le repli unaire
+
+  Scénario: Prise de photo envoie l'image au modèle
+    Soit un serveur live qui demande une photo
+    Quand la session live se déroule
+    Alors la photo est capturée, envoyée en JPEG et le tool est acquitté

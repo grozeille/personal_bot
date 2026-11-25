@@ -28,6 +28,7 @@ public sealed class LiveSteps
     private bool _turnAfterDrain;
     private bool _sendFailed;
     private readonly List<(double? Yaw, double? Pitch, double? Roll)> _moved = new();
+    private readonly List<string> _photoCameras = new();
     private bool _cancelAfterInterrupt;
     private bool _finished;
     private List<string> _sentWhileSpeaking = new();
@@ -90,6 +91,15 @@ public sealed class LiveSteps
         _socket.Script(
             """{"setupComplete":{}}""",
             """{"toolCall":{"functionCalls":[{"id":"cd","name":"search_pokemon","args":{"query":"Poupsacha"}}]}}""");
+        _cancelAfterInterrupt = false;
+    }
+
+    [Given("un serveur live qui demande une photo")]
+    public void GivenDemandePhoto()
+    {
+        _socket.Script(
+            """{"setupComplete":{}}""",
+            """{"toolCall":{"functionCalls":[{"id":"cp","name":"take_photo","args":{"camera":"back"}}]}}""");
         _cancelAfterInterrupt = false;
     }
 
@@ -208,7 +218,12 @@ public sealed class LiveSteps
                 OnSearchWikipedia: (q, ct) => Task.FromResult("RESUME:" + q),
                 OnLoadSkill: slug => "REGLES:" + slug,
                 OnSearchPokemon: q => "FICHE:" + q,
-                OnDrawPokemon: () => "TIRAGE:mystère"),
+                OnDrawPokemon: () => "TIRAGE:mystère",
+                OnTakePhoto: (cam, ct) =>
+                {
+                    _photoCameras.Add(cam);
+                    return Task.FromResult(new byte[] { 0xFF, 0xD8, 0xFF, 0xE0 });
+                }),
             idleTimeout: TimeSpan.FromMilliseconds(300),
             turnTimeout: TimeSpan.FromMilliseconds(150));
         Task run = session.RunAsync(cts.Token);
@@ -255,7 +270,7 @@ public sealed class LiveSteps
             && json.Contains("set_emotion") && json.Contains("SYS")
             && json.Contains("fr-FR") && json.Contains("search_wikipedia")
             && json.Contains("load_skill") && json.Contains("search_pokemon")
-            && json.Contains("draw_pokemon"));
+            && json.Contains("draw_pokemon") && json.Contains("take_photo"));
     }
 
     [Then("le robot salue, joue l'audio et répond au tool")]
@@ -307,6 +322,18 @@ public sealed class LiveSteps
     public void ThenSkill()
     {
         Assert.Contains(_socket.Sent, json => json.Contains("REGLES:devinette-animaux") && json.Contains("\"ck\""));
+    }
+
+    [Then("la photo est capturée, envoyée en JPEG et le tool est acquitté")]
+    public void ThenPhotoEnvoyee()
+    {
+        Assert.Equal(new[] { "back" }, _photoCameras.ToArray());
+        Assert.Contains(_socket.Sent, json =>
+            json.Contains("\"cp\"")
+            && json.Contains("\"take_photo\"")
+            && json.Contains("\"inlineData\"")
+            && json.Contains("image/jpeg")
+            && json.Contains("/9j/4A=="));
     }
 
     [Then("la fiche Pokémon est renvoyée au modèle")]
