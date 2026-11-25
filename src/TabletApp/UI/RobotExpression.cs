@@ -20,6 +20,8 @@ internal enum RobotExpression
     Shocked,
     /// <summary>Dialogue de confirmation tactile (X = annuler, ✓ = confirmer).</summary>
     Confirm,
+    /// <summary>Occupé : yeux ronds + bouche ... animée (analyse en cours).</summary>
+    Busy,
 }
 
 /// <summary>
@@ -89,6 +91,7 @@ internal sealed class ExpressionController
             "thinking" or "think" => RobotExpression.Thinking,
             "shocked" or "surprised" => RobotExpression.Shocked,
             "confirm" or "question" => RobotExpression.Confirm,
+            "busy" => RobotExpression.Busy,
             _ => null,
         };
         if (parsed is null)

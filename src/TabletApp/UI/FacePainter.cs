@@ -103,13 +103,16 @@ internal static class FacePainter
         {
             bool settled = progress >= 1.0 || previous == expression;
             var old = settled ? null : SvgFaceLoader.For(previous);
+            SvgFaceLoader.PartLayer? busyMouth = mouthOverride is null && expression == RobotExpression.Busy
+                ? SvgFaceLoader.BusyMouth(timeSeconds)
+                : null;
             SKPicture mouthPic = mouthOverride is null
-                ? face.Mouth
+                ? busyMouth?.Picture ?? face.Mouth
                 : SvgFaceLoader.For(mouthOverride.Expression).Mouth;
             float mouthSY = (float)(mouthOverride?.Openness ?? 1.0);
             RobotExpression mouthExpr = mouthOverride?.Expression ?? expression;
             float mouthPivotY = mouthOverride is null
-                ? face.MouthPivotY
+                ? busyMouth?.PivotY ?? face.MouthPivotY
                 : SvgFaceLoader.For(mouthOverride.Expression).MouthPivotY;
 
             float prevGaze = LooksAround(previous) ? 1f : 0f;
@@ -183,6 +186,7 @@ internal static class FacePainter
         RobotExpression.Wink => false,
         RobotExpression.Sleep => false,
         RobotExpression.Confirm => false,
+        RobotExpression.Busy => false,
         _ => true,
     };
 

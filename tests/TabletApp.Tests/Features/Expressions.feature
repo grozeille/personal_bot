@@ -1,6 +1,6 @@
 #language: fr
 Fonctionnalité: Expressions du visage
-  Le robot affiche 13 expressions (yeux sans pupilles + bouche) avec transition animée.
+  Le robot affiche 14 expressions (yeux sans pupilles + bouche) avec transition animée.
 
   Plan du scénario: Toutes les expressions
     Soit un visage éveillé
@@ -24,6 +24,7 @@ Fonctionnalité: Expressions du visage
       | sleep    |
       | thinking |
       | shocked  |
+      | busy     |
       | confirm  |
 
   Scénario: Emotion inconnue ignorée

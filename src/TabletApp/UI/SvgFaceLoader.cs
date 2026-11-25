@@ -32,6 +32,7 @@ internal static class SvgFaceLoader
         Heart,
         ArcUp,
         ArcDown,
+        Round,
     }
 
     internal enum MouthVariant
@@ -43,6 +44,7 @@ internal static class SvgFaceLoader
         Slant,
         Ring,
         Dot,
+        Ellipsis,
     }
 
     // Composition de chaque émotion : (œil gauche, œil droit, bouche).
@@ -62,6 +64,7 @@ internal static class SvgFaceLoader
         [RobotExpression.Thinking] = (EyeVariant.Oval, EyeVariant.Oval, MouthVariant.Slant),
         [RobotExpression.Shocked] = (EyeVariant.BigOval, EyeVariant.BigOval, MouthVariant.Ring),
         [RobotExpression.Confirm] = (EyeVariant.XSmall, EyeVariant.Check, MouthVariant.Dot),
+        [RobotExpression.Busy] = (EyeVariant.Round, EyeVariant.Round, MouthVariant.Ellipsis),
     };
 
     private static string EyeFile(string side, EyeVariant variant) => variant switch
@@ -77,6 +80,7 @@ internal static class SvgFaceLoader
         EyeVariant.Heart => $"eye-{side}-heart.svg",
         EyeVariant.ArcUp => $"eye-{side}-arc-up.svg",
         EyeVariant.ArcDown => $"eye-{side}-arc-down.svg",
+        EyeVariant.Round => $"eye-{side}-round.svg",
         _ => throw new ArgumentOutOfRangeException(nameof(variant)),
     };
 
@@ -89,6 +93,7 @@ internal static class SvgFaceLoader
         MouthVariant.Slant => "mouth-slant.svg",
         MouthVariant.Ring => "mouth-ring.svg",
         MouthVariant.Dot => "mouth-dot.svg",
+        MouthVariant.Ellipsis => "mouth-ellipsis-3.svg",
         _ => throw new ArgumentOutOfRangeException(nameof(variant)),
     };
 
@@ -130,6 +135,25 @@ internal static class SvgFaceLoader
                 Cache[expression] = layers;
             }
             return layers;
+        }
+    }
+
+    /// <summary>
+    /// Phase de la bouche busy (1..5, 400 ms par cran, positions fixes) :
+    /// [. ] [.. ] [...] [ ..] [  .], en boucle sur 2 s.
+    /// </summary>
+    internal static int BusyMouthPhase(double timeSeconds) =>
+        1 + ((int)(timeSeconds / 0.4) % 5);
+
+    /// <summary>
+    /// Bouche busy à l'instant t. La phase 3 (... complet) est aussi la
+    /// bouche canonique de la table (transitions entrantes/sortantes).
+    /// </summary>
+    internal static PartLayer BusyMouth(double timeSeconds)
+    {
+        lock (CacheLock)
+        {
+            return Part($"mouth-ellipsis-{BusyMouthPhase(timeSeconds)}.svg", "mouth");
         }
     }
 

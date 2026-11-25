@@ -1,6 +1,7 @@
 # Visages — SVG
 
-13 visages : 12 expressions redessinées à partir de l'image de référence
+14 visages : 12 expressions redessinées à partir de l'image de référence
++ 1 visage occupé (yeux ronds + bouche `...` animée)
 + 1 dialogue de confirmation tactile (aussi jouable touche `C`).
 
 ## Grille commune (ne pas changer d'un fichier à l'autre)
@@ -34,6 +35,7 @@
 | 11-thinking.svg | regard vers le haut à gauche, bouche en biais |
 | 12-shocked.svg | yeux dilatés, bouche en O |
 | 13-confirm.svg | œil gauche X (annuler/rester), œil droit coche (confirmer/quitter), bouche point |
+| 14-busy.svg | yeux ronds, bouche `...` animée (occupé : analyse en cours) |
 
 Ces fichiers ne sont plus lus par l'application : ils restent la référence
 visuelle d'auteur. Le rendu utilise la bibliothèque de parties ci-dessous.
@@ -58,6 +60,7 @@ ce qui saute la transition entre elles.
 | eye-left-arc-up | 08 | 8 |
 | eye-left-arc-down | 10 | 10 |
 | eye-left-x-small | 13 | 13 |
+| eye-left-round | 14 | 14 |
 | eye-right-oval | 01 (absorbe le décalage de 5 et 11) | 1, 5, 11 |
 | eye-right-big-oval | 12 | 12 |
 | eye-right-x | 02 | 2 |
@@ -68,6 +71,7 @@ ce qui saute la transition entre elles.
 | eye-right-arc-up | 08 | 8 |
 | eye-right-arc-down | 10 | 10 |
 | eye-right-check | 13 | 13 |
+| eye-right-round | 14 | 14 |
 | mouth-smile | 01 (03 décalé de 2 px, unifié) | 1, 3, 4, 7, 9 |
 | mouth-flat | 02 (= 10 à l'octet ; 06 plus court/fin/bas, unifié) | 2, 6, 10 |
 | mouth-open-d | 05 | 5 |
@@ -75,6 +79,11 @@ ce qui saute la transition entre elles.
 | mouth-slant | 11 | 11 |
 | mouth-ring | 12 | 12 |
 | mouth-dot | 13 | 13 |
+| mouth-ellipsis-1 | 14 (phase 1/5 : point gauche seul) | 14 |
+| mouth-ellipsis-2 | 14 (phase 2/5 : deux premiers points) | 14 |
+| mouth-ellipsis-3 | 14 (phase 3/5 : `...` complet, canonique) | 14 |
+| mouth-ellipsis-4 | 14 (phase 4/5 : deux derniers points) | 14 |
+| mouth-ellipsis-5 | 14 (phase 5/5 : point droit seul) | 14 |
 
 ## Utilisation dans TabletApp
 
@@ -82,7 +91,7 @@ ce qui saute la transition entre elles.
 (`SKPicture` partagés) et compose chaque émotion via sa table de
 composition ; `FacePainter` dessine les 3 calques à 60 FPS.
 Le self-test (`--self-test`) vérifie que les partages tiennent au pixel
-(`FaceEquivalence`) et rend la planche des 13 visages.
+(`FaceEquivalence`) et rend la planche des 14 visages.
 
 ## Glow
 
@@ -117,3 +126,14 @@ dans le chat — le glow est un effet à ajouter au rendu SkiaSharp
 - Unifications : ovales (01 absorbe 05/09/11, positions incluses),
   chevron droit (04 absorbe 09), sourire (01 absorbe 03), bouche plate
   (02 absorbe 06).
+
+## Visage occupé (25 nov.)
+
+- Yeux ronds pleins (r=38, centres 246/552,269) + bouche `...` animée :
+  5 phases cyclées à 400 ms (`[. ]`, `[.. ]`, `[...]`, `[ ..]`, `[  .]`),
+  positions des points fixes (x = 366/400/434, y = 365, r = 9).
+- La phase 3 (`...` complet) est la bouche canonique de la table de
+  composition (transitions entrantes/sortantes) ; le rendu choisit la
+  phase selon le temps quand l'expression est `busy` sans forçage bouche.
+- Affiché pendant l'enrôlement/analyse vocale (avec halo), à la place
+  des `...` plein écran (réservés à la mise à jour). Aperçu dev : touche `B`.

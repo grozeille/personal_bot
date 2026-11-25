@@ -87,7 +87,9 @@ internal static class NAudioVoice
     {
         using var stream = new MemoryStream(wav, writable: false);
         using var reader = new WaveFileReader(stream);
-        using var output = new WaveOutEvent();
+        // Tampon large : les prompts ne sont pas interactifs, et l'Atom subit
+        // des pointes CPU (Defender, updates) qui affameraient un tampon court.
+        using var output = new WaveOutEvent() { DesiredLatency = 500 };
         var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         output.PlaybackStopped += (_, _) => done.TrySetResult();
         WaveStream source = reader;

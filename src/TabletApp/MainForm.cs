@@ -132,6 +132,12 @@ internal sealed class MainForm : Form
                 _confirm.Cancel();
                 _face.SetExpression(RobotExpression.Confirm);
             }
+            else if (e.KeyCode == Keys.B)
+            {
+                // Dev : aperçu du visage occupé (l'enrôlement l'affiche seul).
+                _confirm.Cancel();
+                _face.SetExpression(RobotExpression.Busy);
+            }
             else if (e.KeyCode == Keys.I)
             {
                 // Dev : aperçu de l'icône de maj (sans NAS), tap icône puis
@@ -438,9 +444,15 @@ internal sealed class MainForm : Form
                     enrollPhase = phase;
                     switch (phase)
                     {
+                        case WakeEnrollment.EnrollPhase.Ambient:
+                        case WakeEnrollment.EnrollPhase.Takes:
                         case WakeEnrollment.EnrollPhase.Thinking:
-                            _face.SetExpression(RobotExpression.Thinking);
-                            _face.Glow = VoiceGlow.Thinking;
+                            // Visage occupé animé (les ... plein écran sont
+                            // réservés à la mise à jour) + halo en analyse.
+                            _face.SetExpression(RobotExpression.Busy);
+                            _face.Glow = phase == WakeEnrollment.EnrollPhase.Thinking
+                                ? VoiceGlow.Thinking
+                                : VoiceGlow.None;
                             break;
                         case WakeEnrollment.EnrollPhase.DoneOk:
                             _face.SetExpression(RobotExpression.Happy);
@@ -468,6 +480,7 @@ internal sealed class MainForm : Form
         {
             _face.Concentrated = false;
             _face.Glow = VoiceGlow.None;
+            _face.BusyDots = false;
             _wake?.Start();
             _voiceRunning = false;
         }

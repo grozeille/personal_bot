@@ -1,6 +1,6 @@
-# Rapport de tests BDD — 2026-11-24 23:07
+# Rapport de tests BDD — 2026-11-24 23:53
 
-*66 scénarios : 66 OK, 0 KO.*
+*67 scénarios : 67 OK, 0 KO.*
 
 ## Clignement des yeux — Clignement régulier sur 30 secondes — OK
 
@@ -31,6 +31,10 @@
 ## Expressions du visage — Emotion inconnue ignorée (nimportequoi) — OK
 
 ![Emotion inconnue ignorée (nimportequoi)](Expressions_du_visage_Emotion_inconnue_ignorée__nimportequoi__1.png)
+
+## Expressions du visage — Toutes les expressions (busy) — OK
+
+![Toutes les expressions (busy)](Expressions_du_visage_Toutes_les_expressions__busy__1.png)
 
 ## Expressions du visage — Toutes les expressions (confirm) — OK
 

@@ -518,7 +518,7 @@ internal static class WakeEnrollment
         ("enroll-hello", "Bonjour, je m'appelle Patate ! Pour mieux te connaître, reste silencieux quelques secondes..."),
         ("enroll-repeat", "Répète après moi : Hey, Patate !"),
         ("enroll-again", "Encore une fois, Hey, Patate !"),
-        ("enroll-thinking", "Attends-moi, je réfléchis..."),
+        ("enroll-thinking", "Attends que j'analyse ta voix, ça peut prendre du temps, je te dis quand c'est fini."),
         ("enroll-ok", "C'est bon, je te reconnaîtrai !"),
         ("enroll-ko", "J'ai du mal à te reconnaître, je garde mes réglages de départ."),
         ("enroll-unheard", "Je n'ai rien entendu, on recommence..."),
@@ -638,7 +638,7 @@ internal static class WakeEnrollment
                 "prises inutilisables");
         }
         onPhase(EnrollPhase.Thinking);
-        await speak("Attends-moi, je réfléchis...", ct).ConfigureAwait(false);
+        await speak("Attends que j'analyse ta voix, ça peut prendre du temps, je te dis quand c'est fini.", ct).ConfigureAwait(false);
         CalibrationVerdict verdict = await CalibrateAsync(
             takes, silencePath, paths.BankPath, log, ct).ConfigureAwait(false);
         while (!verdict.Ok && takes.Count < MaxTakes && attempts < MaxTakes + 2)

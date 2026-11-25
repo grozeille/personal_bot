@@ -22,7 +22,7 @@ internal static class SelfTest
     private static readonly string[] EmotionNames =
     {
         "neutral", "dead", "mean", "dizzy", "happy", "tired", "love", "laugh", "wink", "sleep",
-        "thinking", "shocked", "confirm",
+        "thinking", "shocked", "busy", "confirm",
     };
 
     private static readonly RobotExpression[] Emotions =
@@ -39,6 +39,7 @@ internal static class SelfTest
         RobotExpression.Sleep,
         RobotExpression.Thinking,
         RobotExpression.Shocked,
+        RobotExpression.Busy,
         RobotExpression.Confirm,
     };
 
@@ -52,7 +53,7 @@ internal static class SelfTest
         bool ok = CheckBlink(log) & CheckGaze(log) & CheckSleep(log)
             & CheckExpression(log) & CheckBlinkGating(log) & CheckFaceComplete(log)
             & CheckSteadyYawn(log) & CheckFaceEquivalence(log) & CheckIdleSleep(log)
-            & CheckGeminiVoice(log) & CheckSpeakingMouth(log) & CheckVoiceActivity(log)
+            & CheckGeminiVoice(log) & CheckSpeakingMouth(log) & CheckBusyMouth(log) & CheckVoiceActivity(log)
             & CheckGeminiBrain(log) & CheckWikipedia(log) & CheckSkills(log) & CheckPokedex(log) & CheckVoiceGlow(log) & CheckWakeWord(log)
             & CheckLiveMessages(log) & CheckRobotVoice(log) & CheckRobotSounds(log) & CheckMotionOptions(log);
         RenderFrames(log);
@@ -61,6 +62,7 @@ internal static class SelfTest
         RenderUpdateFrame(log);
         RenderConfirmFrame(log);
         RenderGlowFrame(log);
+        RenderBusyStrip(log);
         log.Add(ok ? "SELF-TEST: PASS" : "SELF-TEST: FAIL");
         foreach (string line in log)
         {
@@ -454,6 +456,32 @@ internal static class SelfTest
         bool ok = audioOk && audioKo && textOk && textNull && matchOk && storeOk;
         log.Add($"GeminiVoice: audio={audioOk && audioKo}, texte={textOk && textNull}, " +
             $"bonjour={matchOk}, coffre={storeOk} -> {(ok ? "OK" : "KO")}");
+        return ok;
+    }
+
+    private static bool CheckBusyMouth(List<string> log)
+    {
+        // Bouche busy : 5 phases ... deux à deux distinctes (400 ms par
+        // cran), et cycle de 2 s (même phase à 2 s d'intervalle).
+        byte[][] phases = new[]
+        {
+            RenderBytes(RobotExpression.Busy, 1.0, awake: true, timeSeconds: 0.2),
+            RenderBytes(RobotExpression.Busy, 1.0, awake: true, timeSeconds: 0.6),
+            RenderBytes(RobotExpression.Busy, 1.0, awake: true, timeSeconds: 1.0),
+            RenderBytes(RobotExpression.Busy, 1.0, awake: true, timeSeconds: 1.4),
+            RenderBytes(RobotExpression.Busy, 1.0, awake: true, timeSeconds: 1.8),
+        };
+        bool ok = true;
+        for (int i = 0; i < phases.Length && ok; i++)
+        {
+            for (int j = i + 1; j < phases.Length && ok; j++)
+            {
+                ok = !phases[i].SequenceEqual(phases[j]);
+            }
+        }
+        ok &= phases[0].SequenceEqual(
+            RenderBytes(RobotExpression.Busy, 1.0, awake: true, timeSeconds: 2.2));
+        log.Add($"BusyMouth: 5 phases distinctes, cycle 2 s -> {(ok ? "OK" : "KO")}");
         return ok;
     }
 
@@ -1438,6 +1466,32 @@ internal static class SelfTest
         using var stream = File.OpenWrite(path);
         data.SaveTo(stream);
         log.Add($"Planche expressions -> {path}");
+    }
+
+    private static void RenderBusyStrip(List<string> log)
+    {
+        // Les 5 phases de la bouche busy côte à côte (400 ms par cran).
+        const int cellWidth = 400;
+        const int cellHeight = 300;
+        using var strip = new SKBitmap(cellWidth * 5, cellHeight);
+        using var canvas = new SKCanvas(strip);
+        canvas.Clear(SKColors.Black);
+        for (int i = 0; i < 5; i++)
+        {
+            using var cell = new SKBitmap(cellWidth, cellHeight);
+            using var cellCanvas = new SKCanvas(cell);
+            FacePainter.DrawFace(
+                cellCanvas, cellWidth, cellHeight, 1.0, 0, 0, 0, 0.2 + i * 0.4,
+                RobotExpression.Busy, RobotExpression.Busy, 1.0);
+            using var image = SKImage.FromBitmap(cell);
+            canvas.DrawImage(image, (float)(i * cellWidth), 0f, SKSamplingOptions.Default);
+        }
+        using var stripImage = SKImage.FromBitmap(strip);
+        using var data = stripImage.Encode(SKEncodedImageFormat.Png, 100);
+        string path = Path.Combine(Path.GetTempPath(), "tabletapp-frame-busy.png");
+        using var stream = File.OpenWrite(path);
+        data.SaveTo(stream);
+        log.Add($"Bandeau busy (5 phases) -> {path}");
     }
 
     private static void RenderTransitionFrame(List<string> log)
