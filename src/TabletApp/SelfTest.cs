@@ -542,8 +542,30 @@ internal static class SelfTest
         bool noneOk = none is null && bad is null;
         bool textOk = text == "Le pingouin vole sous l'eau.";
         bool missingOk = missing is null && broken is null;
-        bool ok = titleOk && noneOk && textOk && missingOk;
-        log.Add($"Wikipedia: titre={titleOk}, extrait={textOk}, vide={noneOk && missingOk} -> {(ok ? "OK" : "KO")}");
+        int calls = 0;
+        Task<string> fake(string url, CancellationToken ct)
+        {
+            calls++;
+            if (url.Contains("opensearch"))
+            {
+                return Task.FromResult("[\"x\",[\"Pingouin\"],[],[]]");
+            }
+            if (url.Contains("titles=Pingouin"))
+            {
+                return Task.FromResult("{\"query\":{\"pages\":{\"1\":{\"extract\":\"Oiseau marin.\"}}}}");
+            }
+            return Task.FromResult("{\"query\":{\"pages\":{\"-1\":{\"missing\":\"\"}}}}");
+        }
+        var search = new WikipediaSearch(fake);
+        string? direct = search.SearchSummaryAsync("Pingouin", CancellationToken.None).GetAwaiter().GetResult();
+        bool directOk = direct == "Pingouin : Oiseau marin." && calls == 1;
+        string? fuzzy = search.SearchSummaryAsync("pingu", CancellationToken.None).GetAwaiter().GetResult();
+        bool fuzzyOk = fuzzy == "Pingouin : Oiseau marin." && calls == 4;
+        string? cached = search.SearchSummaryAsync("Pingouin", CancellationToken.None).GetAwaiter().GetResult();
+        bool cacheOk = cached == direct && calls == 4;
+        bool ok = titleOk && noneOk && textOk && missingOk && directOk && fuzzyOk && cacheOk;
+        log.Add($"Wikipedia: titre={titleOk}, extrait={textOk}, vide={noneOk && missingOk}, " +
+            $"direct={directOk}, repli={fuzzyOk}, cache={cacheOk} -> {(ok ? "OK" : "KO")}");
         return ok;
     }
 

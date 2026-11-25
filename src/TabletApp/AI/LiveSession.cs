@@ -352,7 +352,6 @@ internal sealed class LiveSession
                     {
                         answer = "Recherche non disponible.";
                     }
-                    _events.OnLog($"Live : recherche Wikipédia « {query} ».");
                     await _socket.SendAsync(
                         LiveProtocol.BuildToolResponse(call.Id, call.Name, answer),
                         stop.Token).ConfigureAwait(false);

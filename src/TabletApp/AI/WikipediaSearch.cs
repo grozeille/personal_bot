@@ -27,33 +27,63 @@ internal sealed class WikipediaSearch : IWikipediaSearch
         return http;
     }
 
+    private readonly Func<string, CancellationToken, Task<string>> _get;
+    private readonly Dictionary<string, string> _cache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _cacheLock = new();
+
+    /// <param name="httpGet">Requêtes HTTP (injectable pour les tests).</param>
+    public WikipediaSearch(Func<string, CancellationToken, Task<string>>? httpGet = null)
+    {
+        _get = httpGet ?? ((url, ct) => Http.GetStringAsync(url, ct));
+    }
+
     public async Task<string?> SearchSummaryAsync(string query, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(query))
         {
             return null;
         }
+        string key = query.Trim();
+        lock (_cacheLock)
+        {
+            if (_cache.TryGetValue(key, out string? cached))
+            {
+                return cached;
+            }
+        }
         try
         {
-            string open = await Http.GetStringAsync(
-                $"{Api}?action=opensearch&search={Uri.EscapeDataString(query.Trim())}&limit=3&namespace=0&format=json",
-                ct).ConfigureAwait(false);
-            string? title = ParseOpensearchTitle(open);
-            if (title is null)
+            // Titre direct d'abord (1 requête si la transcription est propre),
+            // sinon recherche du titre (transcription approximative).
+            string? text = await TryExtractAsync(key, ct).ConfigureAwait(false);
+            string? title = key;
+            if (text is null)
             {
-                return null;
-            }
-            string page = await Http.GetStringAsync(
-                $"{Api}?action=query&format=json&prop=extracts&exintro&explaintext&redirects=1&titles={Uri.EscapeDataString(title)}",
-                ct).ConfigureAwait(false);
-            string? text = ParseExtract(page);
-            if (string.IsNullOrWhiteSpace(text))
-            {
-                return null;
+                string open = await _get(
+                    $"{Api}?action=opensearch&search={Uri.EscapeDataString(key)}&limit=3&namespace=0&format=json",
+                    ct).ConfigureAwait(false);
+                title = ParseOpensearchTitle(open);
+                if (title is null)
+                {
+                    return null;
+                }
+                text = await TryExtractAsync(title, ct).ConfigureAwait(false);
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    return null;
+                }
             }
             text = text.Trim();
             string shorted = text.Length <= MaxSummaryChars ? text : text.Substring(0, MaxSummaryChars) + "…";
-            return $"{title} : {shorted}";
+            string answer = $"{title} : {shorted}";
+            lock (_cacheLock)
+            {
+                if (_cache.Count < 50)
+                {
+                    _cache[key] = answer;
+                }
+            }
+            return answer;
         }
         catch (HttpRequestException)
         {
@@ -67,6 +97,15 @@ internal sealed class WikipediaSearch : IWikipediaSearch
         {
             return null;
         }
+    }
+
+    /// <summary>Extrait d'un titre exact (avec redirections), null si absent.</summary>
+    private async Task<string?> TryExtractAsync(string title, CancellationToken ct)
+    {
+        string page = await _get(
+            $"{Api}?action=query&format=json&prop=extracts&exintro&explaintext&redirects=1&titles={Uri.EscapeDataString(title)}",
+            ct).ConfigureAwait(false);
+        return ParseExtract(page);
     }
 
     /// <summary>Premier titre opensearch ([requête,[titres],[desc],[urls]]), null si rien.</summary>

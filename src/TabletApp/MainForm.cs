@@ -31,6 +31,7 @@ internal sealed class MainForm : Form
     private readonly ConfirmDialog _confirm = new();
     private readonly RobotUpdater _updater;
     private readonly TapMessageFilter _tapFilter;
+    private readonly WikipediaSearch _wiki = new();
     private bool _applying;
     private bool _iconPreview;
     private bool _voiceRunning;
@@ -573,8 +574,12 @@ internal sealed class MainForm : Form
                 OnCalibrationRequested: () => _pendingCalibration = true,
                 OnMoveHead: (yaw, pitch, roll) => { _ = MoveHeadAsync(yaw, pitch, roll); },
                 OnSearchWikipedia: async (query, ct) =>
-                    await new WikipediaSearch().SearchSummaryAsync(query, ct).ConfigureAwait(false)
-                    ?? $"Je n'ai rien trouvé sur {query}."),
+                {
+                    var watch = System.Diagnostics.Stopwatch.StartNew();
+                    string? summary = await _wiki.SearchSummaryAsync(query, ct).ConfigureAwait(false);
+                    VoiceLog.Info($"Recherche Wikipédia « {query} » en {watch.Elapsed.TotalSeconds:F1} s.");
+                    return summary ?? $"Je n'ai rien trouvé sur {query}.";
+                }),
             voiceName: LiveProtocol.ResolveVoice());
         _liveSession = session;
         try
