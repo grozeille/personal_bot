@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
     <RuntimeIdentifier>win-x86</RuntimeIdentifier>
     <!-- Auto-contenu : évite d'installer le runtime x86 sur le PC de dev. -->
     <SelfContained>true</SelfContained>

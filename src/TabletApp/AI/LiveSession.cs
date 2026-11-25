@@ -54,7 +54,8 @@ internal sealed record LiveCallbacks(
     Func<string, CancellationToken, Task<string>>? OnSearchWikipedia = null,
     Func<string, string>? OnLoadSkill = null,
     Func<string, string>? OnSearchPokemon = null,
-    Func<string>? OnDrawPokemon = null);
+    Func<string>? OnDrawPokemon = null,
+    Func<string, CancellationToken, Task<byte[]>>? OnTakePhoto = null);
 
 /// <summary>
 /// Session vocale Live : micro streamé, audio modèle joué, tools exécutés,
@@ -381,6 +382,46 @@ internal sealed class LiveSession
                     string text = _events.OnDrawPokemon?.Invoke() ?? "ok";
                     await _socket.SendAsync(
                         LiveProtocol.BuildToolResponse(call.Id, call.Name, text),
+                        stop.Token).ConfigureAwait(false);
+                    continue;
+                }
+                if (call.Name == "take_photo")
+                {
+                    string camera = string.Equals(call.Camera, "back", StringComparison.OrdinalIgnoreCase)
+                        ? "back"
+                        : "front";
+                    string answer;
+                    if (_events.OnTakePhoto is { } takePhoto)
+                    {
+                        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(stop.Token);
+                        timeout.CancelAfter(TimeSpan.FromSeconds(15));
+                        try
+                        {
+                            byte[] jpeg = await takePhoto(camera, timeout.Token).ConfigureAwait(false);
+                            await _socket.SendAsync(
+                                LiveProtocol.BuildToolResponse(
+                                    call.Id, call.Name,
+                                    "Voici la photo prise à l'instant. Décris ce que tu vois directement.",
+                                    jpeg),
+                                stop.Token).ConfigureAwait(false);
+                            continue;
+                        }
+                        catch (OperationCanceledException) when (!stop.IsCancellationRequested)
+                        {
+                            answer = "La caméra a mis trop de temps à répondre.";
+                        }
+                        catch (Exception ex)
+                        {
+                            _events.OnLog($"Live : photo en échec : {ex.Message}.");
+                            answer = "Impossible de prendre une photo pour le moment.";
+                        }
+                    }
+                    else
+                    {
+                        answer = "Caméra non disponible.";
+                    }
+                    await _socket.SendAsync(
+                        LiveProtocol.BuildToolResponse(call.Id, call.Name, answer),
                         stop.Token).ConfigureAwait(false);
                     continue;
                 }

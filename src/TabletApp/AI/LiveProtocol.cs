@@ -4,7 +4,7 @@ namespace TabletApp.AI;
 
 /// <summary>Appel d'outil reçu (set_emotion : Emotion renseigné ; move_head : Yaw/Pitch/Roll).</summary>
 internal sealed record LiveToolCall(string Id, string Name, string? Emotion, string? Sound, string? Gesture,
-    double? Yaw = null, double? Pitch = null, double? Roll = null, string? Query = null);
+    double? Yaw = null, double? Pitch = null, double? Roll = null, string? Query = null, string? Camera = null);
 
 /// <summary>Mise à jour serveur décodée (plusieurs aspects peuvent coexister).</summary>
 internal sealed record LiveServerUpdate(
@@ -216,6 +216,24 @@ internal static class LiveProtocol
                             },
                             new
                             {
+                                name = "take_photo",
+                                description = "Ouvre la caméra, prend une photo et l'envoie pour que tu puisses voir. Appelle-le dès qu'on te montre quelque chose ou qu'on te demande si tu vois quelque chose.",
+                                parameters = new
+                                {
+                                    type = "OBJECT",
+                                    properties = new
+                                    {
+                                        camera = new
+                                        {
+                                            type = "STRING",
+                                            description = "Caméra à utiliser : 'front' (face à l'enfant, par défaut) ou 'back' (arrière, vers la table).",
+                                            @enum = new[] { "front", "back" },
+                                        },
+                                    },
+                                },
+                            },
+                            new
+                            {
                                 name = "move_head",
                                 description = "Tourne la tête vers une pose (yaw : + vers sa gauche ; pitch : + levée ; roll : + penchée à sa droite). Au moins un axe. La pose est tenue jusqu'au prochain mouvement.",
                                 parameters = new
@@ -245,6 +263,19 @@ internal static class LiveProtocol
             {
                 data = Convert.ToBase64String(pcm16k),
                 mimeType = "audio/pcm;rate=16000",
+            },
+        },
+    });
+
+    /// <summary>Envoie une image JPEG dans le flux vidéo Live pour que le modèle l'analyse.</summary>
+    public static string BuildVideoFrame(byte[] jpegBytes) => JsonSerializer.Serialize(new
+    {
+        realtimeInput = new
+        {
+            video = new
+            {
+                data = Convert.ToBase64String(jpegBytes),
+                mimeType = "image/jpeg",
             },
         },
     });
@@ -302,6 +333,35 @@ internal static class LiveProtocol
             },
         });
 
+    /// <summary>Réponse de tool multimodale avec image JPEG intégrée (parts.inlineData).</summary>
+    public static string BuildToolResponse(string id, string name, string result, byte[] jpegBytes) =>
+        JsonSerializer.Serialize(new
+        {
+            toolResponse = new
+            {
+                functionResponses = new[]
+                {
+                    new
+                    {
+                        id,
+                        name,
+                        response = new { result },
+                        parts = new[]
+                        {
+                            new
+                            {
+                                inlineData = new
+                                {
+                                    mimeType = "image/jpeg",
+                                    data = Convert.ToBase64String(jpegBytes),
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        });
+
     public static LiveServerUpdate ParseUpdate(string json)
     {
         using var doc = JsonDocument.Parse(json);
@@ -321,7 +381,7 @@ internal static class LiveProtocol
                 string name = call.TryGetProperty("name", out JsonElement nameEl)
                     ? nameEl.GetString() ?? "" : "";
                 list.Add(new LiveToolCall(id, name, ReadEmotion(call), ReadSound(call), ReadGesture(call),
-                    ReadAxis(call, "yaw"), ReadAxis(call, "pitch"), ReadAxis(call, "roll"), ReadArg(call, "query")));
+                    ReadAxis(call, "yaw"), ReadAxis(call, "pitch"), ReadAxis(call, "roll"), ReadArg(call, "query"), ReadArg(call, "camera")));
             }
             return LiveServerUpdate.Empty with { ToolCalls = list };
         }
