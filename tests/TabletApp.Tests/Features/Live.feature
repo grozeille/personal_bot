@@ -26,6 +26,21 @@ Fonctionnalité: Session Live
     Quand la session live se déroule
     Alors le résumé Wikipédia est renvoyé au modèle
 
+  Scénario: Chargement de skill renvoie les règles
+    Soit un serveur live qui charge une skill
+    Quand la session live se déroule
+    Alors les règles de la skill sont renvoyées au modèle
+
+  Scénario: Recherche Pokémon renvoie la fiche
+    Soit un serveur live qui cherche un Pokémon
+    Quand la session live se déroule
+    Alors la fiche Pokémon est renvoyée au modèle
+
+  Scénario: Tirage Pokémon renvoie un mystère
+    Soit un serveur live qui tire un Pokémon
+    Quand la session live se déroule
+    Alors un Pokémon mystère est renvoyé au modèle
+
   Scénario: Le robot sourd pendant sa propre parole
     Soit un serveur live qui parle puis termine son tour
     Quand la session live tourne en semi-duplex

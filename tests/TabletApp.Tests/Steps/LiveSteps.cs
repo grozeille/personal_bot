@@ -75,6 +75,33 @@ public sealed class LiveSteps
         _cancelAfterInterrupt = false;
     }
 
+    [Given("un serveur live qui charge une skill")]
+    public void GivenChargeSkill()
+    {
+        _socket.Script(
+            """{"setupComplete":{}}""",
+            """{"toolCall":{"functionCalls":[{"id":"ck","name":"load_skill","args":{"query":"devinette-animaux"}}]}}""");
+        _cancelAfterInterrupt = false;
+    }
+
+    [Given("un serveur live qui cherche un Pokémon")]
+    public void GivenCherchePokemon()
+    {
+        _socket.Script(
+            """{"setupComplete":{}}""",
+            """{"toolCall":{"functionCalls":[{"id":"cd","name":"search_pokemon","args":{"query":"Poupsacha"}}]}}""");
+        _cancelAfterInterrupt = false;
+    }
+
+    [Given("un serveur live qui tire un Pokémon")]
+    public void GivenTirePokemon()
+    {
+        _socket.Script(
+            """{"setupComplete":{}}""",
+            """{"toolCall":{"functionCalls":[{"id":"ct","name":"draw_pokemon"}]}}""");
+        _cancelAfterInterrupt = false;
+    }
+
     [Given("un serveur live qui joue un son")]
     public void GivenJoueUnSon()
     {
@@ -178,7 +205,10 @@ public sealed class LiveSteps
                 OnLog: msg => _logs.Add(msg),
                 OnCalibrationRequested: () => _calibrationRequested = true,
                 OnMoveHead: (yaw, pitch, roll) => _moved.Add((yaw, pitch, roll)),
-                OnSearchWikipedia: (q, ct) => Task.FromResult("RESUME:" + q)),
+                OnSearchWikipedia: (q, ct) => Task.FromResult("RESUME:" + q),
+                OnLoadSkill: slug => "REGLES:" + slug,
+                OnSearchPokemon: q => "FICHE:" + q,
+                OnDrawPokemon: () => "TIRAGE:mystère"),
             idleTimeout: TimeSpan.FromMilliseconds(300),
             turnTimeout: TimeSpan.FromMilliseconds(150));
         Task run = session.RunAsync(cts.Token);
@@ -223,7 +253,9 @@ public sealed class LiveSteps
         Assert.Contains(_socket.Sent, json =>
             json.Contains("models/gemini-3.8-live")
             && json.Contains("set_emotion") && json.Contains("SYS")
-            && json.Contains("fr-FR") && json.Contains("search_wikipedia"));
+            && json.Contains("fr-FR") && json.Contains("search_wikipedia")
+            && json.Contains("load_skill") && json.Contains("search_pokemon")
+            && json.Contains("draw_pokemon"));
     }
 
     [Then("le robot salue, joue l'audio et répond au tool")]
@@ -269,6 +301,24 @@ public sealed class LiveSteps
     public void ThenWiki()
     {
         Assert.Contains(_socket.Sent, json => json.Contains("RESUME:pingouin") && json.Contains("\"cw\""));
+    }
+
+    [Then("les règles de la skill sont renvoyées au modèle")]
+    public void ThenSkill()
+    {
+        Assert.Contains(_socket.Sent, json => json.Contains("REGLES:devinette-animaux") && json.Contains("\"ck\""));
+    }
+
+    [Then("la fiche Pokémon est renvoyée au modèle")]
+    public void ThenFichePokemon()
+    {
+        Assert.Contains(_socket.Sent, json => json.Contains("FICHE:Poupsacha") && json.Contains("\"cd\""));
+    }
+
+    [Then("un Pokémon mystère est renvoyé au modèle")]
+    public void ThenTiragePokemon()
+    {
+        Assert.Contains(_socket.Sent, json => json.Contains("TIRAGE") && json.Contains("\"ct\""));
     }
 
     [Then("le son giggle est joué et le tool est acquitté")]

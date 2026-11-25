@@ -32,6 +32,8 @@ internal sealed class MainForm : Form
     private readonly RobotUpdater _updater;
     private readonly TapMessageFilter _tapFilter;
     private readonly WikipediaSearch _wiki = new();
+    private readonly Lazy<TabletApp.Data.PokedexReader?> _pokedex = new(() => TabletApp.Data.PokedexReader.LoadDefault());
+    private readonly Random _draw = new();
     private bool _applying;
     private bool _iconPreview;
     private bool _voiceRunning;
@@ -579,6 +581,29 @@ internal sealed class MainForm : Form
                     string? summary = await _wiki.SearchSummaryAsync(query, ct).ConfigureAwait(false);
                     VoiceLog.Info($"Recherche Wikipédia « {query} » en {watch.Elapsed.TotalSeconds:F1} s.");
                     return summary ?? $"Je n'ai rien trouvé sur {query}.";
+                },
+                OnLoadSkill: slug =>
+                {
+                    var lib = new TabletApp.Skills.SkillLibrary();
+                    if (lib.TryGet(slug, out TabletApp.Skills.Skill skill))
+                    {
+                        VoiceLog.Info($"Skill : {skill.Slug}.");
+                        return skill.Body;
+                    }
+                    VoiceLog.Info($"Skill inconnue : {slug}.");
+                    return $"Skill '{slug}' inconnue. Disponibles : {string.Join(", ", lib.List().Select(s => s.Slug))}.";
+                },
+                OnSearchPokemon: query =>
+                {
+                    string? fiche = _pokedex.Value?.FindSummary(query);
+                    VoiceLog.Info($"Pokédex : {query}.");
+                    return fiche ?? "Pokédex indisponible.";
+                },
+                OnDrawPokemon: () =>
+                {
+                    string? fiche = _pokedex.Value?.RandomSummary(_draw);
+                    VoiceLog.Info("Pokédex : tirage.");
+                    return fiche ?? "Pokédex indisponible.";
                 }),
             voiceName: LiveProtocol.ResolveVoice());
         _liveSession = session;

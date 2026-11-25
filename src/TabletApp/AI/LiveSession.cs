@@ -51,7 +51,10 @@ internal sealed record LiveCallbacks(
     Action<string> OnLog,
     Action? OnCalibrationRequested = null,
     Action<double?, double?, double?>? OnMoveHead = null,
-    Func<string, CancellationToken, Task<string>>? OnSearchWikipedia = null);
+    Func<string, CancellationToken, Task<string>>? OnSearchWikipedia = null,
+    Func<string, string>? OnLoadSkill = null,
+    Func<string, string>? OnSearchPokemon = null,
+    Func<string>? OnDrawPokemon = null);
 
 /// <summary>
 /// Session vocale Live : micro streamé, audio modèle joué, tools exécutés,
@@ -354,6 +357,30 @@ internal sealed class LiveSession
                     }
                     await _socket.SendAsync(
                         LiveProtocol.BuildToolResponse(call.Id, call.Name, answer),
+                        stop.Token).ConfigureAwait(false);
+                    continue;
+                }
+                if (call.Name == "load_skill" && call.Query is { Length: > 0 } slug)
+                {
+                    string text = _events.OnLoadSkill?.Invoke(slug.Trim()) ?? "ok";
+                    await _socket.SendAsync(
+                        LiveProtocol.BuildToolResponse(call.Id, call.Name, text),
+                        stop.Token).ConfigureAwait(false);
+                    continue;
+                }
+                if (call.Name == "search_pokemon" && call.Query is { Length: > 0 } wanted)
+                {
+                    string text = _events.OnSearchPokemon?.Invoke(wanted.Trim()) ?? "ok";
+                    await _socket.SendAsync(
+                        LiveProtocol.BuildToolResponse(call.Id, call.Name, text),
+                        stop.Token).ConfigureAwait(false);
+                    continue;
+                }
+                if (call.Name == "draw_pokemon")
+                {
+                    string text = _events.OnDrawPokemon?.Invoke() ?? "ok";
+                    await _socket.SendAsync(
+                        LiveProtocol.BuildToolResponse(call.Id, call.Name, text),
                         stop.Token).ConfigureAwait(false);
                     continue;
                 }

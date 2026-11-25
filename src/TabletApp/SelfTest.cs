@@ -53,7 +53,7 @@ internal static class SelfTest
             & CheckExpression(log) & CheckBlinkGating(log) & CheckFaceComplete(log)
             & CheckSteadyYawn(log) & CheckFaceEquivalence(log) & CheckIdleSleep(log)
             & CheckGeminiVoice(log) & CheckSpeakingMouth(log) & CheckVoiceActivity(log)
-            & CheckGeminiBrain(log) & CheckWikipedia(log) & CheckVoiceGlow(log) & CheckWakeWord(log)
+            & CheckGeminiBrain(log) & CheckWikipedia(log) & CheckSkills(log) & CheckPokedex(log) & CheckVoiceGlow(log) & CheckWakeWord(log)
             & CheckLiveMessages(log) & CheckRobotVoice(log) & CheckRobotSounds(log) & CheckMotionOptions(log);
         RenderFrames(log);
         RenderExpressionSheet(log);
@@ -512,7 +512,11 @@ internal static class SelfTest
             && GeminiBrain.BuildSystemPrompt(GeminiBrain.DefaultPersonality).Contains("\"reply\"") && GeminiBrain.BuildSystemPrompt(GeminiBrain.DefaultPersonality).Contains("\"emotion\"")
             && GeminiBrain.BuildLivePrompt(GeminiBrain.DefaultPersonality).Contains("set_emotion")
             && GeminiBrain.BuildLivePrompt(GeminiBrain.DefaultPersonality).Contains("play_fart")
-            && GeminiBrain.BuildLivePrompt("X").Contains("search_wikipedia");
+            && GeminiBrain.BuildLivePrompt("X").Contains("search_wikipedia")
+            && !GeminiBrain.BuildLivePrompt("X").Contains("Skills disponibles")
+            && GeminiBrain.BuildLivePrompt("X", new[] { new TabletApp.Skills.Skill("dev", "Dev", "jeu", "règles") }).Contains("dev (jeu)")
+            && GeminiBrain.BuildLivePrompt("X").Contains("search_pokemon")
+            && GeminiBrain.BuildLivePrompt("X").Contains("draw_pokemon");
         (string fallbackText, bool fallbackCustom) = GeminiBrain.ResolvePersonality(
             Path.Combine(Path.GetTempPath(), "patate-config-absente.json"));
         promptOk = promptOk && !fallbackCustom && fallbackText == GeminiBrain.DefaultPersonality;
@@ -566,6 +570,70 @@ internal static class SelfTest
         bool ok = titleOk && noneOk && textOk && missingOk && directOk && fuzzyOk && cacheOk;
         log.Add($"Wikipedia: titre={titleOk}, extrait={textOk}, vide={noneOk && missingOk}, " +
             $"direct={directOk}, repli={fuzzyOk}, cache={cacheOk} -> {(ok ? "OK" : "KO")}");
+        return ok;
+    }
+
+    private static bool CheckSkills(List<string> log)
+    {
+        // Skills : parsing tolérant, surcharge locale prioritaire (dossiers temporaires).
+        string root = Path.Combine(Path.GetTempPath(), "patate-skills-test");
+        string shipped = Path.Combine(root, "ship");
+        string over = Path.Combine(root, "over");
+        Directory.CreateDirectory(shipped);
+        Directory.CreateDirectory(over);
+        File.WriteAllText(Path.Combine(shipped, "devinette-animaux.md"),
+            "# Devinette animaux\nTriggers: devinette, devine\n\nRègle 1.\n");
+        File.WriteAllText(Path.Combine(shipped, "brouillon.md"), "sans entête, juste des règles\n");
+        File.WriteAllText(Path.Combine(over, "devinette-animaux.md"),
+            "# Devinette (maison)\n\nRègle maison.\n");
+        var lib = new TabletApp.Skills.SkillLibrary(shipped, over);
+        bool parseOk = lib.TryGet("devinette-animaux", out TabletApp.Skills.Skill house)
+            && house.Title == "Devinette (maison)" && house.Body == "Règle maison.";
+        bool fallbackOk = lib.TryGet("brouillon", out TabletApp.Skills.Skill draft)
+            && draft.Title == "brouillon" && draft.Triggers == "" && draft.Body == "sans entête, juste des règles";
+        bool missOk = !lib.TryGet("inconnue", out _);
+        bool listOk = lib.List().Count == 2;
+        try
+        {
+            Directory.Delete(root, true);
+        }
+        catch
+        {
+        }
+        bool ok = parseOk && fallbackOk && missOk && listOk;
+        log.Add($"Skills: parse={parseOk}, défaut={fallbackOk}, absente={missOk}, liste={listOk} -> {(ok ? "OK" : "KO")}");
+        return ok;
+    }
+
+    private static bool CheckPokedex(List<string> log)
+    {
+        // Pokédex : exact, flou (Poupsacha), suggestions, tirage, fichier livré.
+        const string json = "{\"pokemon\":["
+            + "{\"id\":906,\"name_fr\":\"Poussacha\",\"name_en\":\"sprigatito\","
+            + "\"types_fr\":[\"Plante\"],\"generation\":9,\"legendary\":false,"
+            + "\"category_fr\":\"Pokémon Chat Herbe\",\"description_fr\":\"Il adore se prélasser.\","
+            + "\"evolves_from\":null,\"evolves_to\":[\"Matourgeon\"]},"
+            + "{\"id\":25,\"name_fr\":\"Pikachu\",\"name_en\":\"pikachu\","
+            + "\"types_fr\":[\"Électrik\"],\"generation\":1,\"legendary\":false,"
+            + "\"category_fr\":\"\",\"description_fr\":\"\",\"evolves_from\":null,\"evolves_to\":[\"Raichu\"]}]}";
+        var reader = new TabletApp.Data.PokedexReader(json);
+        string? exact = reader.FindSummary("POUSSACHA");
+        bool exactOk = exact is not null && exact.Contains("n°906")
+            && exact.Contains("Matourgeon") && exact.Contains("prélasser");
+        string? fuzzy = reader.FindSummary("Poupsacha");
+        bool fuzzyOk = fuzzy is not null && fuzzy.Contains("Poussacha")
+            && fuzzy.Contains("proche de");
+        string? unknown = reader.FindSummary("xyzztop");
+        bool unknownOk = unknown is not null && unknown.Contains("Tu voulais dire")
+            && unknown.Contains("Poussacha");
+        string? drawn = reader.RandomSummary(new Random(42));
+        bool drawOk = drawn is not null && (drawn.Contains("Poussacha") || drawn.Contains("Pikachu"));
+        bool shippedOk = TabletApp.Data.PokedexReader.LoadDefault()?.Count == 1025;
+        bool missingOk = TabletApp.Data.PokedexReader.LoadDefault(
+            Path.Combine(Path.GetTempPath(), "patate-dex-absent")) is null;
+        bool ok = exactOk && fuzzyOk && unknownOk && drawOk && shippedOk && missingOk;
+        log.Add($"Pokedex: exact={exactOk}, flou={fuzzyOk}, inconnu={unknownOk}, " +
+            $"tirage={drawOk}, livré={shippedOk}, absent={missingOk} -> {(ok ? "OK" : "KO")}");
         return ok;
     }
 
@@ -1641,6 +1709,11 @@ internal static class SelfTest
             using var mic = new FileLiveMic(samples, TimeSpan.FromSeconds(Math.Clamp(delaySec, 0, 120)));
             using var player = new SimPlayer();
             bool wikiCalled = false;
+            bool skillCalled = false;
+            bool pokedexCalled = false;
+            var skills = new TabletApp.Skills.SkillLibrary();
+            TabletApp.Data.PokedexReader? dex = TabletApp.Data.PokedexReader.LoadDefault();
+            var draw = new Random();
             var session = new TabletApp.AI.LiveSession(
                 key, TabletApp.AI.GeminiBrain.LiveSystemPrompt,
                 TabletApp.AI.GeminiBrain.EmotionNames, TabletApp.AI.RobotSounds.Names,
@@ -1658,11 +1731,29 @@ internal static class SelfTest
                     msg => { log("  LOG: " + msg); if (msg.Contains("search_wikipedia")) wikiCalled = true; },
                     null, null,
                     async (query, ct) => await new TabletApp.AI.WikipediaSearch().SearchSummaryAsync(query, ct).ConfigureAwait(false)
-                        ?? $"Je n'ai rien trouvé sur {query}."),
+                        ?? $"Je n'ai rien trouvé sur {query}.",
+                    slug =>
+                    {
+                        skillCalled = true;
+                        log("  SKILL: " + slug);
+                        return skills.TryGet(slug, out TabletApp.Skills.Skill sk) ? sk.Body : "Skill inconnue.";
+                    },
+                    query =>
+                    {
+                        pokedexCalled = true;
+                        return dex?.FindSummary(query) ?? "Pokédex indisponible.";
+                    },
+                    () =>
+                    {
+                        pokedexCalled = true;
+                        return dex?.RandomSummary(draw) ?? "Pokédex indisponible.";
+                    }),
                 idleTimeout: TimeSpan.FromSeconds(30),
                 voiceName: TabletApp.AI.LiveProtocol.ResolveVoice());
             session.RunAsync(CancellationToken.None).GetAwaiter().GetResult();
             log("WIKI-CALL: " + (wikiCalled ? "oui" : "non"));
+            log("SKILL-CALL: " + (skillCalled ? "oui" : "non"));
+            log("POKEDEX-CALL: " + (pokedexCalled ? "oui" : "non"));
             return true;
         }
         catch (Exception ex)

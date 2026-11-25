@@ -29,7 +29,7 @@ internal sealed class GeminiBrain
     };
 
     // Version du prompt : incrémenter à chaque modification du texte.
-    internal const string PromptVersion = "2026-11-23.1";
+    internal const string PromptVersion = "2026-11-23.3";
 
     internal const string DefaultPersonality =
         "Tu es Patate, un petit robot compagnon qui parle à un enfant de 7 ans. "
@@ -57,9 +57,22 @@ internal sealed class GeminiBrain
 
         + "Si on te demande un prout : reply vide et sound prout. "        + "dead, thinking, shocked. Choisis celle qui correspond à ton humeur.";
 
-    internal static string BuildLivePrompt(string personality) => personality
+    /// <summary>Paragraphe d'index des skills (vide si aucune).</summary>
+    internal static string BuildSkillIndex(System.Collections.Generic.IReadOnlyList<Skills.Skill> skills)
+    {
+        if (skills.Count == 0)
+        {
+            return "";
+        }
+        var names = skills.Select(s => s.Triggers.Length > 0 ? $"{s.Slug} ({s.Triggers})" : $"{s.Slug} ({s.Title})");
+        return " Skills disponibles : " + string.Join(", ", names) + "."
+            + " Quand l'enfant propose une activité couverte, appelle load_skill avec son nom puis suis les règles reçues.";
+    }
+
+    internal static string BuildLivePrompt(string personality, System.Collections.Generic.IReadOnlyList<Skills.Skill>? skills = null) => personality
         + " Tu parles à voix haute, naturellement, sans jamais lire de JSON. "
-        + "Quand ton humeur change, appelle l'outil set_emotion avec l'émotion adaptée. Pour jouer un son, appelle l'outil play_sound avec un des petits sons. Pour bouger la tete, appelle l'outil play_gesture avec un de : nod_yes, shake_no, tilt_curious, greet_wake, look_away_shy, excited_wiggle, sleepy_bow, listening, confused_scan, reset_neutral. Quand on te demande un prout, appelle play_fart et reste totalement silencieux (aucun mot). Quand l'enfant dit au revoir ou demande d'arrêter, dis Bye ! puis appelle l'outil end_conversation. Quand on te demande de te calibrer ou de mieux reconnaître la voix, dis Je me recalibre ! puis appelle l'outil run_calibration. Pour tourner la tête vers une pose, appelle l'outil move_head (yaw : + vers ta gauche ; pitch : + levée ; roll : + penchée à ta droite ; au moins un axe, en degrés) ; la pose est tenue jusqu'au prochain mouvement, reviens au neutre avec le geste reset_neutral. Pour une question de culture générale (c'est quoi, qui a, quand), appelle search_wikipedia avec le sujet puis résume en 1 ou 2 phrases simples. Si tu n'entends que du bruit ou du silence, reste totalement silencieux : ne prononce jamais les mots 'no speech' ni '...'. Ne répète jamais ta dernière réponse à l'identique : si tu n'as rien de nouveau, tais-toi.";
+        + "Quand ton humeur change, appelle l'outil set_emotion avec l'émotion adaptée. Pour jouer un son, appelle l'outil play_sound avec un des petits sons. Pour bouger la tete, appelle l'outil play_gesture avec un de : nod_yes, shake_no, tilt_curious, greet_wake, look_away_shy, excited_wiggle, sleepy_bow, listening, confused_scan, reset_neutral. Quand on te demande un prout, appelle play_fart et reste totalement silencieux (aucun mot). Quand l'enfant dit au revoir ou demande d'arrêter, dis Bye ! puis appelle l'outil end_conversation. Quand on te demande de te calibrer ou de mieux reconnaître la voix, dis Je me recalibre ! puis appelle l'outil run_calibration. Pour tourner la tête vers une pose, appelle l'outil move_head (yaw : + vers ta gauche ; pitch : + levée ; roll : + penchée à ta droite ; au moins un axe, en degrés) ; la pose est tenue jusqu'au prochain mouvement, reviens au neutre avec le geste reset_neutral. Pour une question de culture générale (c'est quoi, qui a, quand), appelle search_wikipedia avec le sujet puis résume en 1 ou 2 phrases simples. Pour les Pokémon, appelle search_pokemon avec le nom entendu (ou draw_pokemon pour tirer au sort) et ne cite que les données renvoyées. Si tu n'entends que du bruit ou du silence, reste totalement silencieux : ne prononce jamais les mots 'no speech' ni '...'. Ne répète jamais ta dernière réponse à l'identique : si tu n'as rien de nouveau, tais-toi."
+        + BuildSkillIndex(skills ?? System.Array.Empty<Skills.Skill>());
 
     internal static (string Text, bool Custom) ResolvePersonality(string? configPath = null)
     {
@@ -87,7 +100,7 @@ internal sealed class GeminiBrain
 
     internal static string SystemPrompt => BuildSystemPrompt(Personality);
 
-    internal static string LiveSystemPrompt => BuildLivePrompt(Personality);
+    internal static string LiveSystemPrompt => BuildLivePrompt(Personality, new Skills.SkillLibrary().List());
 
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(60) };
 

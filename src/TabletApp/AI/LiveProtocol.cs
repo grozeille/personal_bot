@@ -183,6 +183,39 @@ internal static class LiveProtocol
                             },
                             new
                             {
+                                name = "load_skill",
+                                description = "Charge les règles d'une skill (jeu, savoir-faire) par son nom.",
+                                parameters = new
+                                {
+                                    type = "OBJECT",
+                                    properties = new
+                                    {
+                                        query = new { type = "STRING", description = "Le nom de la skill (voir la liste).", },
+                                    },
+                                    required = new[] { "query" },
+                                },
+                            },
+                            new
+                            {
+                                name = "search_pokemon",
+                                description = "Cherche un Pokémon dans le Pokédex local (tolère les fautes) et renvoie sa fiche.",
+                                parameters = new
+                                {
+                                    type = "OBJECT",
+                                    properties = new
+                                    {
+                                        query = new { type = "STRING", description = "Le nom entendu, même approximatif.", },
+                                    },
+                                    required = new[] { "query" },
+                                },
+                            },
+                            new
+                            {
+                                name = "draw_pokemon",
+                                description = "Tire un Pokémon mystère au sort pour un jeu de devinettes.",
+                            },
+                            new
+                            {
                                 name = "move_head",
                                 description = "Tourne la tête vers une pose (yaw : + vers sa gauche ; pitch : + levée ; roll : + penchée à sa droite). Au moins un axe. La pose est tenue jusqu'au prochain mouvement.",
                                 parameters = new

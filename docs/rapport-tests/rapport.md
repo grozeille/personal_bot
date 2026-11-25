@@ -1,6 +1,6 @@
-# Rapport de tests BDD — 2026-11-24 20:56
+# Rapport de tests BDD — 2026-11-24 23:07
 
-*63 scénarios : 63 OK, 0 KO.*
+*66 scénarios : 66 OK, 0 KO.*
 
 ## Clignement des yeux — Clignement régulier sur 30 secondes — OK
 
@@ -114,6 +114,8 @@
 
 ## Session Live — Bruit bref sans fin de phrase, silence streamé — OK
 
+## Session Live — Chargement de skill renvoie les règles — OK
+
 ## Session Live — Claquement fort ignoré — OK
 
 ## Session Live — Compteur de tour remis à zéro après la réponse — OK
@@ -140,6 +142,8 @@
 
 ## Session Live — Prout demandé joue un son au lieu de la voix — OK
 
+## Session Live — Recherche Pokémon renvoie la fiche — OK
+
 ## Session Live — Recherche Wikipédia renvoie un résumé — OK
 
 ## Session Live — Réponse bloquée rouverte par le watchdog — OK
@@ -149,6 +153,8 @@
 ## Session Live — Souffle coupé, voix faible transmise — OK
 
 ## Session Live — Tap pendant la réponse revient à l'écoute — OK
+
+## Session Live — Tirage Pokémon renvoie un mystère — OK
 
 ## Session Live — Tour vide serveur ignoré — OK
 
