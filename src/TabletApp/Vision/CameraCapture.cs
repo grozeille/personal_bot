@@ -131,6 +131,7 @@ internal static class CameraCapture
                 MemoryPreference = MediaCaptureMemoryPreference.Cpu,
             };
             await capture.InitializeAsync(settings).AsTask(ct).ConfigureAwait(false);
+            await EnsureAutoExposureAsync(capture, ct).ConfigureAwait(false);
 
             byte[]? jpeg = await TryCaptureViaFrameReaderAsync(capture, maxDimension, quality, ct)
                 .ConfigureAwait(false);
@@ -203,13 +204,13 @@ internal static class CameraCapture
             var raw = new RawFrame(pixels, w, h, avgLuma);
             lastFrame = raw;
 
-            // Laisse l'exposition auto converger (~12 frames ou >= 700 ms).
-            bool warmedUp = framesSeen >= 12 || (framesSeen >= 4 && (DateTime.UtcNow - started).TotalMilliseconds >= 700);
-            if (warmedUp && avgLuma >= 4.0)
+            // Laisse l'exposition auto converger (~15 frames ET >= 1000 ms).
+            bool warmedUp = framesSeen >= 15 && (DateTime.UtcNow - started).TotalMilliseconds >= 1000;
+            if (warmedUp && avgLuma >= 15.0)
             {
                 tcs.TrySetResult(raw);
             }
-            else if (framesSeen >= 30)
+            else if (framesSeen >= 45 || (framesSeen >= 20 && (DateTime.UtcNow - started).TotalMilliseconds >= 2200))
             {
                 tcs.TrySetResult(raw);
             }
@@ -251,6 +252,40 @@ internal static class CameraCapture
         return chosen is not null
             ? EncodeBgraToJpeg(chosen.BgraPixels, chosen.Width, chosen.Height, chosen.AvgLuma, maxDimension, quality)
             : null;
+    }
+
+    private static async Task EnsureAutoExposureAsync(MediaCapture capture, CancellationToken ct)
+    {
+        try
+        {
+            var ctrl = capture.VideoDeviceController;
+            if (ctrl.Exposure.Capabilities.Supported && ctrl.Exposure.Capabilities.AutoModeSupported)
+            {
+                ctrl.Exposure.TrySetAuto(true);
+            }
+            if (ctrl.ExposureControl.Supported && !ctrl.ExposureControl.Auto)
+            {
+                await ctrl.ExposureControl.SetAutoAsync(true).AsTask(ct).ConfigureAwait(false);
+            }
+            if (ctrl.Brightness.Capabilities.Supported && ctrl.Brightness.Capabilities.AutoModeSupported)
+            {
+                ctrl.Brightness.TrySetAuto(true);
+            }
+            if (ctrl.BacklightCompensation.Capabilities.Supported)
+            {
+                if (ctrl.BacklightCompensation.Capabilities.AutoModeSupported)
+                {
+                    ctrl.BacklightCompensation.TrySetAuto(true);
+                }
+                else
+                {
+                    ctrl.BacklightCompensation.TrySetValue(ctrl.BacklightCompensation.Capabilities.Max);
+                }
+            }
+        }
+        catch
+        {
+        }
     }
 
     private static async Task<byte[]> CaptureViaPhotoStreamAsync(
