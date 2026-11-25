@@ -25,8 +25,8 @@ internal sealed record CapturedPhoto(byte[] Jpeg, string DeviceName);
 
 /// <summary>
 /// Capture photo ponctuelle via Windows MediaCapture + MediaFrameReader (sans flux permanent).
-/// Ouvre la caméra vidéo seule (sans toucher au micro), attend une image non noire,
-/// la redimensionne via SkiaSharp et libère la caméra aussitôt.
+/// Ouvre la caméra vidéo seule (sans toucher au micro), laisse l'exposition auto converger,
+/// applique un rattrapage gamma si la scène est sombre, redimensionne via SkiaSharp et libère la caméra.
 /// </summary>
 internal static class CameraCapture
 {
@@ -158,6 +158,8 @@ internal static class CameraCapture
         return result.Jpeg;
     }
 
+    private sealed record RawFrame(byte[] BgraPixels, int Width, int Height, double AvgLuma);
+
     private static async Task<byte[]?> TryCaptureViaFrameReaderAsync(
         MediaCapture capture, int maxDimension, int quality, CancellationToken ct)
     {
@@ -171,9 +173,10 @@ internal static class CameraCapture
         using var reader = await capture.CreateFrameReaderAsync(source, MediaEncodingSubtypes.Bgra8)
             .AsTask(ct).ConfigureAwait(false);
 
-        var tcs = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var tcs = new TaskCompletionSource<RawFrame>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var started = DateTime.UtcNow;
         int framesSeen = 0;
-        byte[]? lastFrame = null;
+        RawFrame? lastFrame = null;
 
         reader.FrameArrived += (sender, _) =>
         {
@@ -192,20 +195,23 @@ internal static class CameraCapture
                 ? sb
                 : SoftwareBitmap.Convert(sb, BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied);
 
-            byte[]? encoded = EncodeSoftwareBitmapToJpeg(bgra, maxDimension, quality, out bool isDark);
-            if (encoded is null)
+            int w = bgra.PixelWidth;
+            int h = bgra.PixelHeight;
+            byte[] pixels = new byte[w * h * 4];
+            bgra.CopyToBuffer(System.Runtime.InteropServices.WindowsRuntime.WindowsRuntimeBufferExtensions.AsBuffer(pixels));
+            double avgLuma = MeasureAverageLuma(pixels);
+            var raw = new RawFrame(pixels, w, h, avgLuma);
+            lastFrame = raw;
+
+            // Laisse l'exposition auto converger (~12 frames ou >= 700 ms).
+            bool warmedUp = framesSeen >= 12 || (framesSeen >= 4 && (DateTime.UtcNow - started).TotalMilliseconds >= 700);
+            if (warmedUp && avgLuma >= 4.0)
             {
-                return;
+                tcs.TrySetResult(raw);
             }
-            lastFrame = encoded;
-            // Ignore les 2 premières frames (souvent noires sur webcam/Camo) sauf si lumineuses.
-            if (!isDark && framesSeen >= 2)
+            else if (framesSeen >= 30)
             {
-                tcs.TrySetResult(encoded);
-            }
-            else if (framesSeen >= 25)
-            {
-                tcs.TrySetResult(encoded);
+                tcs.TrySetResult(raw);
             }
         };
 
@@ -215,6 +221,7 @@ internal static class CameraCapture
             return null;
         }
 
+        RawFrame? chosen = null;
         try
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -230,16 +237,20 @@ internal static class CameraCapture
                     tcs.TrySetCanceled(timeout.Token);
                 }
             });
-            return await tcs.Task.ConfigureAwait(false);
+            chosen = await tcs.Task.ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
-            return lastFrame;
+            chosen = lastFrame;
         }
         finally
         {
             await reader.StopAsync().AsTask(CancellationToken.None).ConfigureAwait(false);
         }
+
+        return chosen is not null
+            ? EncodeBgraToJpeg(chosen.BgraPixels, chosen.Width, chosen.Height, chosen.AvgLuma, maxDimension, quality)
+            : null;
     }
 
     private static async Task<byte[]> CaptureViaPhotoStreamAsync(
@@ -256,18 +267,13 @@ internal static class CameraCapture
         return ResizeAndEncodeJpeg(raw, maxDimension, quality);
     }
 
-    private static byte[]? EncodeSoftwareBitmapToJpeg(
-        SoftwareBitmap bgra, int maxDimension, int quality, out bool isDark)
+    private static byte[]? EncodeBgraToJpeg(
+        byte[] pixels, int w, int h, double avgLuma, int maxDimension, int quality)
     {
-        int w = bgra.PixelWidth;
-        int h = bgra.PixelHeight;
+        ApplyAutoGammaIfDark(pixels, avgLuma);
         var info = new SKImageInfo(w, h, SKColorType.Bgra8888, SKAlphaType.Premul);
         using var bitmap = new SKBitmap(info);
-        byte[] pixels = new byte[w * h * 4];
-        bgra.CopyToBuffer(System.Runtime.InteropServices.WindowsRuntime.WindowsRuntimeBufferExtensions.AsBuffer(pixels));
         Marshal.Copy(pixels, 0, bitmap.GetPixels(), pixels.Length);
-
-        isDark = IsMostlyBlack(pixels);
 
         SKBitmap target = bitmap;
         SKBitmap? resized = null;
@@ -294,21 +300,48 @@ internal static class CameraCapture
         }
     }
 
-    internal static bool IsMostlyBlack(byte[] bgraPixels)
+    internal static double MeasureAverageLuma(byte[] bgraPixels)
     {
         if (bgraPixels.Length < 4)
         {
-            return true;
+            return 0.0;
         }
         long sum = 0;
         int samples = 0;
-        int step = Math.Max(4, (bgraPixels.Length / 4 / 200) * 4);
+        int step = Math.Max(4, (bgraPixels.Length / 4 / 250) * 4);
         for (int i = 0; i + 2 < bgraPixels.Length; i += step)
         {
             sum += bgraPixels[i] + bgraPixels[i + 1] + bgraPixels[i + 2];
             samples += 3;
         }
-        return samples == 0 || (double)sum / samples < 4.0;
+        return samples == 0 ? 0.0 : (double)sum / samples;
+    }
+
+    /// <summary>
+    /// Éclaircit les ombres (LUT gamma) si la luminosité moyenne est sous-exposée (&lt; 85/255).
+    /// </summary>
+    internal static void ApplyAutoGammaIfDark(byte[] bgraPixels, double avgLuma)
+    {
+        if (avgLuma <= 12.0 || avgLuma >= 85.0)
+        {
+            return;
+        }
+        double gamma = Math.Clamp(Math.Log(100.0 / 255.0) / Math.Log(avgLuma / 255.0), 0.45, 1.0);
+        if (gamma >= 0.98)
+        {
+            return;
+        }
+        var lut = new byte[256];
+        for (int v = 0; v < 256; v++)
+        {
+            lut[v] = (byte)Math.Clamp((int)Math.Round(255.0 * Math.Pow(v / 255.0, gamma)), 0, 255);
+        }
+        for (int i = 0; i + 2 < bgraPixels.Length; i += 4)
+        {
+            bgraPixels[i] = lut[bgraPixels[i]];
+            bgraPixels[i + 1] = lut[bgraPixels[i + 1]];
+            bgraPixels[i + 2] = lut[bgraPixels[i + 2]];
+        }
     }
 
     /// <summary>
