@@ -50,6 +50,9 @@ internal sealed class RobotFaceRenderer : UserControl
     /// <summary>Halo voix : fixe en écoute, pulsé en réflexion.</summary>
     public VoiceGlow Glow { get; set; }
 
+    /// <summary>Partie de Uno : table affichée à la place du visage. Mis par MainForm.</summary>
+    public UnoTableState? UnoTable { get; set; }
+
     private bool _wasSpeaking;
     private TimeSpan? _speakEdgeAt;
     private bool _wasConcentrated;
@@ -91,11 +94,17 @@ internal sealed class RobotFaceRenderer : UserControl
 
     public void WakeUp() => _sleep.WakeUp(_clock.Elapsed);
 
-    public void SetExpression(RobotExpression expression) =>
+    public void SetExpression(RobotExpression expression)
+    {
+        UnoTable = null; // Un visage demandé chasse la table de Uno.
         _expression.SetExpression(expression, _clock.Elapsed);
+    }
 
-    public void SetEmotion(string emotion) =>
+    public void SetEmotion(string emotion)
+    {
+        UnoTable = null;
         _expression.SetEmotion(emotion, _clock.Elapsed);
+    }
 
     /// <summary>
     /// Activité (touche, toucher, futur mot-clé) : réarme l'endormissement,
@@ -219,6 +228,11 @@ internal sealed class RobotFaceRenderer : UserControl
         }
         UpdateFps(now);
 
+        if (UnoTable is not null)
+        {
+            UnoTablePainter.DrawTable(e.Surface.Canvas, e.Info.Width, e.Info.Height, UnoTable);
+            return;
+        }
         FacePainter.DrawFace(
             e.Surface.Canvas, e.Info.Width, e.Info.Height,
             open, gazeX, gazeY, _sleep.Yawn, now.TotalSeconds,

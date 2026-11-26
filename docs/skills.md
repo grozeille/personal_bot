@@ -1,8 +1,9 @@
 # Skills du robot
 
 Une skill = des règles nommées que le robot charge à la demande (outil
-`load_skill`) au lieu de les réexpliquer à chaque fois. Exemple :
-`devinette-animaux` (jeu de devinettes par oui/non).
+`load_skill`) au lieu de les réexpliquer à chaque fois. Exemples :
+`devinette-animaux` (oui/non), `devinette-pokemon` (Pokédex + tirage),
+`uno` (partie de Uno : main virtuelle, photo du dessus, table à l'écran).
 
 ## Ajouter une skill
 

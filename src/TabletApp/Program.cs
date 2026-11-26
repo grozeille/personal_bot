@@ -23,6 +23,9 @@ internal static class Program
     /// <summary>Flag --discuter : lance la discussion libre au démarrage.</summary>
     internal static bool AutoDiscuss { get; private set; }
 
+    /// <summary>Flag --record-debug : enregistre les tours (WAV + sidecar) en local.</summary>
+    internal static bool RecordDebug { get; private set; }
+
     [STAThread]
     private static void Main(string[] args)
     {
@@ -63,6 +66,22 @@ internal static class Program
         if (args.Contains("--wake-probe"))
         {
             Environment.Exit(SelfTest.WakeProbe() ? 0 : 1);
+            return;
+        }
+
+        if (args.Contains("--probe-mic"))
+        {
+            Environment.Exit(SelfTest.ProbeMic() ? 0 : 1);
+            return;
+        }
+
+        if (args.Contains("--build-atlas"))
+        {
+            int at = Array.IndexOf(args, "--build-atlas");
+            string? outdir = at >= 0 && at + 1 < args.Length && !args[at + 1].StartsWith("--")
+                ? args[at + 1]
+                : null;
+            Environment.Exit(SelfTest.BuildUnoAtlas(outdir) ? 0 : 1);
             return;
         }
 
@@ -422,6 +441,7 @@ internal static class Program
         }
         AutoVoiceTest = args.Contains("--voice-test");
         AutoDiscuss = args.Contains("--discuter");
+        RecordDebug = args.Contains("--record-debug");
 
         ApplicationConfiguration.Initialize();
         Application.Run(new MainForm());

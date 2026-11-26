@@ -55,7 +55,11 @@ internal sealed record LiveCallbacks(
     Func<string, string>? OnLoadSkill = null,
     Func<string, string>? OnSearchPokemon = null,
     Func<string>? OnDrawPokemon = null,
-    Func<string, CancellationToken, Task<byte[]>>? OnTakePhoto = null);
+    Func<string, CancellationToken, Task<byte[]>>? OnTakePhoto = null,
+    Func<string>? OnUnoNewGame = null,
+    Func<string?, string?, double?, string?, string>? OnUnoPlay = null,
+    Func<double?, string?, string>? OnUnoDraw = null,
+    Func<string?, string?, string>? OnUnoSetPile = null);
 
 /// <summary>
 /// Session vocale Live : micro streamé, audio modèle joué, tools exécutés,
@@ -65,6 +69,10 @@ internal sealed class LiveSession
 {
     internal const string GreetingPrompt =
         "L'enfant vient d'arriver. Salue-le en un seul mot : Bonjour.";
+
+    /// <summary>Reprise après pause : pas de re-bonjour, juste "Oui ?".</summary>
+    internal const string ResumePrompt =
+        "L'enfant revient après une courte pause. Ne le resalue pas : dis juste « Oui ? » ou « Je t'écoute », on reprend la discussion.";
 
     private readonly string _apiKey;
     private readonly string _systemPrompt;
@@ -139,7 +147,7 @@ internal sealed class LiveSession
             _events.OnLog($"Live : session prête en {setupWatch.Elapsed.TotalSeconds:F1} s.");
             _events.OnGlow(TabletApp.UI.VoiceGlow.Listening);
             await _socket.SendAsync(
-                LiveProtocol.BuildClientTurn(GreetingPrompt), stop.Token).ConfigureAwait(false);
+                LiveProtocol.BuildClientTurn(Greeting), stop.Token).ConfigureAwait(false);
             _mic.Chunk += OnMicChunk;
             _mic.Start();
             _player.Start();
@@ -154,6 +162,7 @@ internal sealed class LiveSession
         }
         finally
         {
+            Recorder?.Finish();
             _events.OnSpeaking(false);
             _events.OnGlow(TabletApp.UI.VoiceGlow.None);
             try
@@ -168,6 +177,15 @@ internal sealed class LiveSession
 
     /// <summary>Vrai si les envois ont lâché (repli unaire demandé).</summary>
     public bool SendFailed { get; private set; }
+
+    /// <summary>Vrai si la session s'est terminée par pause_conversation (reprise possible).</summary>
+    public bool PausedByTool { get; private set; }
+
+    /// <summary>Consigne du premier tour (bonjour ou reprise). Posée avant RunAsync.</summary>
+    public string Greeting { get; set; } = GreetingPrompt;
+
+    /// <summary>Enregistreur debug (nul en temps normal). Posé avant RunAsync.</summary>
+    public ITurnRecorder? Recorder { get; set; }
 
     public void RequestStop()
     {
@@ -278,11 +296,13 @@ internal sealed class LiveSession
                 if (!_mutedTurn && !_dropAudio)
                 {
                     _player.PlayChunk(pcm);
+                    Recorder?.AppendRobot(pcm);
                 }
             }
             if (update.InputTranscript is { } heard)
             {
                 _events.OnHeardTranscript(heard);
+                Recorder?.NoteHeard(heard);
             }
             if (update.OutputTranscript is { } said)
             {
@@ -294,6 +314,7 @@ internal sealed class LiveSession
                 if (!_mutedTurn && !_dropAudio)
                 {
                     robotText.Append(said);
+                    Recorder?.NoteSaid(said);
                     if (IsEmptyTurnPrefix(robotText))
                     {
                         // Tour vide serveur (« <no speech>... ») : coupe le blip
@@ -314,6 +335,7 @@ internal sealed class LiveSession
             }
             bool endByTool = false;
             bool calibrateByTool = false;
+            bool pauseByTool = false;
             foreach (LiveToolCall call in update.ToolCalls)
             {
                 _events.OnLog($"Live : outil {call.Name} ({call.Id}).");
@@ -385,6 +407,38 @@ internal sealed class LiveSession
                         stop.Token).ConfigureAwait(false);
                     continue;
                 }
+                if (call.Name == "uno_new_game")
+                {
+                    string text = _events.OnUnoNewGame?.Invoke() ?? "ok";
+                    await _socket.SendAsync(
+                        LiveProtocol.BuildToolResponse(call.Id, call.Name, text),
+                        stop.Token).ConfigureAwait(false);
+                    continue;
+                }
+                if (call.Name == "uno_play_cards")
+                {
+                    string text = _events.OnUnoPlay?.Invoke(call.Cards, call.Top, call.Stack, call.Color) ?? "ok";
+                    await _socket.SendAsync(
+                        LiveProtocol.BuildToolResponse(call.Id, call.Name, text),
+                        stop.Token).ConfigureAwait(false);
+                    continue;
+                }
+                if (call.Name == "uno_draw")
+                {
+                    string text = _events.OnUnoDraw?.Invoke(call.Count, call.Top) ?? "ok";
+                    await _socket.SendAsync(
+                        LiveProtocol.BuildToolResponse(call.Id, call.Name, text),
+                        stop.Token).ConfigureAwait(false);
+                    continue;
+                }
+                if (call.Name == "uno_set_pile")
+                {
+                    string text = _events.OnUnoSetPile?.Invoke(call.Top, call.Color) ?? "ok";
+                    await _socket.SendAsync(
+                        LiveProtocol.BuildToolResponse(call.Id, call.Name, text),
+                        stop.Token).ConfigureAwait(false);
+                    continue;
+                }
                 if (call.Name == "take_photo")
                 {
                     string camera = string.Equals(call.Camera, "back", StringComparison.OrdinalIgnoreCase)
@@ -430,6 +484,11 @@ internal sealed class LiveSession
                     _events.OnLog("Live : fin de discussion demandée.");
                     endByTool = true;
                 }
+                if (call.Name == "pause_conversation")
+                {
+                    _events.OnLog("Live : pause demandée.");
+                    pauseByTool = true;
+                }
                 if (call.Name == "run_calibration")
                 {
                     _events.OnLog("Live : calibration demandée.");
@@ -470,6 +529,11 @@ internal sealed class LiveSession
             if (endByTool)
             {
                 // Après l'acquittement : le "Bye !" déjà en file se joue.
+                RequestStop();
+            }
+            if (pauseByTool)
+            {
+                PausedByTool = true;
                 RequestStop();
             }
             if (calibrateByTool)
@@ -628,6 +692,7 @@ internal sealed class LiveSession
             bool muted = ShouldMuteMic(_speaking, _speakEndedAt, now, SpeakMuteTail) || !_player.IsDrained;
             bool speech = !muted && rms >= NAudioVoice.SpeechRmsThreshold
                 && NAudioVoice.ComputeZcr(pcm16k, pcm16k.Length) < VoiceZcrThreshold;
+            Recorder?.AppendMic(pcm16k, rms, speech, muted);
             // Flux continu exigé par le serveur : ne jamais affamer le stream
             // (sinon les tours suivant le premier reviennent vides). Sourdine
             // = silence numérique (pas d'écho), jamais un trou.
@@ -691,6 +756,7 @@ internal sealed class LiveSession
         {
             _events.OnLog("Live : fin de phrase détectée (client).");
             _events.OnLog($"Live : tour envoyé : {_turnAudioChunks} chunks, RMS max {_turnPeakRms:F0}.");
+            Recorder?.EndTurn(_turnAudioChunks, _turnPeakRms);
             _turnAudioChunks = 0;
             _turnPeakRms = 0;
             _ = SendAsync(LiveProtocol.BuildTurnComplete());

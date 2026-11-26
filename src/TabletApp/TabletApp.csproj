@@ -58,6 +58,12 @@
     <EmbeddedResource Include="..\..\docs\icons\*.svg">
       <LogicalName>TabletApp.Icons.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
+    <EmbeddedResource Include="..\..\docs\uno-atlas\atlas.png">
+      <LogicalName>TabletApp.UnoAtlas.atlas.png</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\..\docs\uno-atlas\atlas.json">
+      <LogicalName>TabletApp.UnoAtlas.atlas.json</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <ItemGroup>

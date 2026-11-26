@@ -29,6 +29,10 @@ public sealed class LiveSteps
     private bool _sendFailed;
     private readonly List<(double? Yaw, double? Pitch, double? Roll)> _moved = new();
     private readonly List<string> _photoCameras = new();
+    private readonly List<(string? Cards, string? Top, double? Stack, string? Color)> _unoPlays = new();
+    private readonly List<double?> _unoDraws = new();
+    private readonly List<(string? Top, string? Color)> _unoPiles = new();
+    private string? _debugDir;
     private bool _cancelAfterInterrupt;
     private bool _finished;
     private List<string> _sentWhileSpeaking = new();
@@ -110,6 +114,48 @@ public sealed class LiveSteps
             """{"setupComplete":{}}""",
             """{"toolCall":{"functionCalls":[{"id":"ct","name":"draw_pokemon"}]}}""");
         _cancelAfterInterrupt = false;
+    }
+
+    [Given("un serveur live qui démarre le Uno")]
+    public void GivenUnoNewGame()
+    {
+        _socket.Script(
+            """{"setupComplete":{}}""",
+            """{"toolCall":{"functionCalls":[{"id":"cu1","name":"uno_new_game"}]}}""");
+        _cancelAfterInterrupt = false;
+    }
+
+    [Given("un serveur live qui joue au Uno")]
+    public void GivenUnoPlay()
+    {
+        _socket.Script(
+            """{"setupComplete":{}}""",
+            """{"toolCall":{"functionCalls":[{"id":"cu2","name":"uno_play_cards","args":{"cards":"1 vert, 1 bleu","top":"1 rouge","stack":0}}]}}""");
+        _cancelAfterInterrupt = false;
+    }
+
+    [Given("un serveur live qui pioche au Uno")]
+    public void GivenUnoDraw()
+    {
+        _socket.Script(
+            """{"setupComplete":{}}""",
+            """{"toolCall":{"functionCalls":[{"id":"cu3","name":"uno_draw","args":{"count":2}}]}}""");
+        _cancelAfterInterrupt = false;
+    }
+
+    [Given("un serveur live qui annonce la pile")]
+    public void GivenUnoPile()
+    {
+        _socket.Script(
+            """{"setupComplete":{}}""",
+            """{"toolCall":{"functionCalls":[{"id":"cu4","name":"uno_set_pile","args":{"top":"5 rouge"}}]}}""");
+        _cancelAfterInterrupt = false;
+    }
+
+    [Given("l'enregistrement debug est actif")]
+    public void GivenDebugActif()
+    {
+        _debugDir = Directory.CreateTempSubdirectory("robot-debug-live-").FullName;
     }
 
     [Given("un serveur live qui joue un son")]
@@ -223,9 +269,29 @@ public sealed class LiveSteps
                 {
                     _photoCameras.Add(cam);
                     return Task.FromResult(new byte[] { 0xFF, 0xD8, 0xFF, 0xE0 });
+                },
+                OnUnoNewGame: () => "UNO:main",
+                OnUnoPlay: (cards, top, stack, color) =>
+                {
+                    _unoPlays.Add((cards, top, stack, color));
+                    return "UNO:coup";
+                },
+                OnUnoDraw: (count, top) =>
+                {
+                    _unoDraws.Add(count);
+                    return "UNO:pioche";
+                },
+                OnUnoSetPile: (top, color) =>
+                {
+                    _unoPiles.Add((top, color));
+                    return "UNO:pile";
                 }),
             idleTimeout: TimeSpan.FromMilliseconds(300),
             turnTimeout: TimeSpan.FromMilliseconds(150));
+        if (_debugDir is not null)
+        {
+            session.Recorder = new TurnRecorder(_debugDir);
+        }
         Task run = session.RunAsync(cts.Token);
         byte[] loud = LoudChunk();
         byte[] silence = new byte[320];
@@ -270,7 +336,10 @@ public sealed class LiveSteps
             && json.Contains("set_emotion") && json.Contains("SYS")
             && json.Contains("fr-FR") && json.Contains("search_wikipedia")
             && json.Contains("load_skill") && json.Contains("search_pokemon")
-            && json.Contains("draw_pokemon") && json.Contains("take_photo"));
+            && json.Contains("draw_pokemon") && json.Contains("take_photo")
+            && json.Contains("uno_new_game") && json.Contains("uno_play_cards") && json.Contains("uno_draw")
+            && json.Contains("uno_set_pile")
+            && json.Contains("pause_conversation"));
     }
 
     [Then("le robot salue, joue l'audio et répond au tool")]
@@ -346,6 +415,53 @@ public sealed class LiveSteps
     public void ThenTiragePokemon()
     {
         Assert.Contains(_socket.Sent, json => json.Contains("TIRAGE") && json.Contains("\"ct\""));
+    }
+
+    [Then("la main de Uno est renvoyée au modèle")]
+    public void ThenUnoNewGame()
+    {
+        Assert.Contains(_socket.Sent, json => json.Contains("UNO:main") && json.Contains("\"cu1\""));
+    }
+
+    [Then("le coup de Uno est transmis avec cartes et dessus")]
+    public void ThenUnoPlay()
+    {
+        Assert.Contains(_socket.Sent, json => json.Contains("UNO:coup") && json.Contains("\"cu2\""));
+        Assert.Equal(
+            new (string?, string?, double?, string?)[] { ("1 vert, 1 bleu", "1 rouge", 0, null) },
+            _unoPlays.ToArray());
+    }
+
+    [Then("la pioche de Uno est transmise avec son compte")]
+    public void ThenUnoDraw()
+    {
+        Assert.Contains(_socket.Sent, json => json.Contains("UNO:pioche") && json.Contains("\"cu3\""));
+        Assert.Equal(new double?[] { 2 }, _unoDraws.ToArray());
+    }
+
+    [Then("la pile est transmise avec dessus et couleur")]
+    public void ThenUnoPile()
+    {
+        Assert.Contains(_socket.Sent, json => json.Contains("UNO:pile") && json.Contains("\"cu4\""));
+        Assert.Equal(
+            new (string? Top, string? Color)[] { ("5 rouge", null) },
+            _unoPiles.ToArray());
+    }
+
+    [Then("des fichiers de tours debug existent")]
+    public void ThenDebugTours()
+    {
+        Assert.NotNull(_debugDir);
+        Assert.NotEmpty(Directory.GetFiles(_debugDir!, "turn-*-mic.wav"));
+        Assert.NotEmpty(Directory.GetFiles(_debugDir!, "turn-*.json"));
+        try
+        {
+            Directory.Delete(_debugDir!, true);
+        }
+        catch
+        {
+        }
+        _debugDir = null;
     }
 
     [Then("le son giggle est joué et le tool est acquitté")]

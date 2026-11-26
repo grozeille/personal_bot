@@ -4,6 +4,7 @@ using System.Text.Json;
 using SkiaSharp;
 using TabletApp.AI;
 using TabletApp.UI;
+using TabletApp.Uno;
 using TabletApp.Update;
 using Velopack;
 using Velopack.Sources;
@@ -54,7 +55,7 @@ internal static class SelfTest
             & CheckExpression(log) & CheckBlinkGating(log) & CheckFaceComplete(log)
             & CheckSteadyYawn(log) & CheckFaceEquivalence(log) & CheckIdleSleep(log)
             & CheckGeminiVoice(log) & CheckSpeakingMouth(log) & CheckBusyMouth(log) & CheckVoiceActivity(log)
-            & CheckGeminiBrain(log) & CheckWikipedia(log) & CheckSkills(log) & CheckPokedex(log) & CheckVoiceGlow(log) & CheckWakeWord(log)
+            & CheckGeminiBrain(log) & CheckWikipedia(log) & CheckSkills(log) & CheckPokedex(log) & CheckUno(log) & CheckVoiceGlow(log) & CheckWakeWord(log)
             & CheckLiveMessages(log) & CheckRobotVoice(log) & CheckRobotSounds(log) & CheckMotionOptions(log);
         RenderFrames(log);
         RenderExpressionSheet(log);
@@ -63,6 +64,7 @@ internal static class SelfTest
         RenderConfirmFrame(log);
         RenderGlowFrame(log);
         RenderBusyStrip(log);
+        RenderUnoTable(log);
         log.Add(ok ? "SELF-TEST: PASS" : "SELF-TEST: FAIL");
         foreach (string line in log)
         {
@@ -630,6 +632,128 @@ internal static class SelfTest
         }
         bool ok = parseOk && fallbackOk && missOk && listOk;
         log.Add($"Skills: parse={parseOk}, défaut={fallbackOk}, absente={missOk}, liste={listOk} -> {(ok ? "OK" : "KO")}");
+        return ok;
+    }
+
+    private static bool CheckUno(List<string> log)
+    {
+        // Moteur Uno Express : paquet 104 (1-9, pas de 0), donne 8, coups scriptés.
+        var rng = new Random(7);
+        var deck = TabletApp.Uno.UnoGame.FullDeck();
+        bool composition = deck.Count == 104
+            && deck.Count(c => c.Rank == TabletApp.Uno.UnoRank.Wild) == 4
+            && deck.Count(c => c.Rank == TabletApp.Uno.UnoRank.WildPlus2) == 4
+            && deck.Count(c => c.Rank == TabletApp.Uno.UnoRank.Plus1) == 8
+            && deck.Count(c => c.IsNumber) == 72;
+        var game = new TabletApp.Uno.UnoGame();
+        bool deal = game.NewGame(rng).Count == 8 && game.Started;
+        static TabletApp.Uno.UnoCard C(string text)
+        {
+            if (!TabletApp.Uno.UnoCard.TryParse(text, out TabletApp.Uno.UnoCard card))
+            {
+                throw new InvalidOperationException($"Parse test : « {text} » rejeté.");
+            }
+            return card;
+        }
+        bool parse = C("1 vert").ToFrench() == "1 vert"
+            && C("+1 ROUGE").Rank == TabletApp.Uno.UnoRank.Plus1
+            && C("passe ton tour bleu").Rank == TabletApp.Uno.UnoRank.Skip
+            && C("joker").Rank == TabletApp.Uno.UnoRank.Wild
+            && C("+2").Rank == TabletApp.Uno.UnoRank.WildPlus2
+            && C("9 vers").ToFrench() == "9 vert"
+            && TabletApp.Uno.UnoCard.TryParseMany("1 vert, 1 bleu")?.Count == 2
+            && !TabletApp.Uno.UnoCard.TryParse("+2 rouge", out _)
+            && !TabletApp.Uno.UnoCard.TryParse("rouge", out _)
+            && !TabletApp.Uno.UnoCard.TryParse("17 mauve", out _)
+            && !TabletApp.Uno.UnoCard.TryParse("0 bleu", out _)
+            && !TabletApp.Uno.UnoCard.TryParse("zéro vert", out _)
+            && TabletApp.Uno.UnoCard.TryParseMany("1 vert, 17 mauve") is null;
+        var solo = new TabletApp.Uno.UnoGame();
+        solo.SetHandForTest(new[] { C("1 vert"), C("5 jaune") });
+        var okSingle = solo.Play(new[] { C("1 vert") }, C("1 rouge"), 0, null);
+        bool single = okSingle.Ok && okSingle.Top == C("1 vert") && solo.Hand.Count == 1;
+        var koSingle = solo.Play(new[] { C("5 jaune") }, C("9 rouge"), 0, null);
+        bool illegal = !koSingle.Ok && koSingle.Message.Contains("ne va pas") && solo.Hand.Count == 1;
+        bool missing = !solo.Play(new[] { C("9 bleu") }, C("9 rouge"), 0, null).Ok;
+        var combo = new TabletApp.Uno.UnoGame();
+        combo.SetHandForTest(new[] { C("1 vert"), C("1 bleu"), C("5 jaune") });
+        var okCombo = combo.Play(new[] { C("1 vert"), C("1 bleu") }, C("1 rouge"), 0, null);
+        bool comboOk = okCombo.Ok && okCombo.Top == C("1 bleu") && combo.Hand.Count == 1 && !okCombo.Replay;
+        var comboKo = new TabletApp.Uno.UnoGame();
+        comboKo.SetHandForTest(new[] { C("+1 rouge"), C("+1 bleu") });
+        bool comboRefused = !comboKo.Play(new[] { C("+1 rouge"), C("+1 bleu") }, C("3 rouge"), 0, null).Ok;
+        var skipCombo = new TabletApp.Uno.UnoGame();
+        skipCombo.SetHandForTest(new[] { C("passe ton tour rouge"), C("passe ton tour bleu") });
+        bool skipComboRefused = !skipCombo.Play(
+            new[] { C("passe ton tour rouge"), C("passe ton tour bleu") }, C("3 rouge"), 0, null).Ok;
+        var stack = new TabletApp.Uno.UnoGame();
+        stack.SetHandForTest(new[] { C("+1 bleu"), C("5 jaune") });
+        var okStack = stack.Play(new[] { C("+1 bleu") }, C("+1 rouge"), 0, null);
+        bool stackOk = okStack.Ok && okStack.Stack == 2 && stack.Hand.Count == 1;
+        var mixed = new TabletApp.Uno.UnoGame();
+        mixed.SetHandForTest(new[] { C("+2") });
+        bool mixedRefused = !mixed.Play(new[] { C("+2") }, C("+1 rouge"), 1, null).Ok;
+        var stack2 = new TabletApp.Uno.UnoGame();
+        stack2.SetHandForTest(new[] { C("+1 jaune") });
+        bool stackGrows = stack2.Play(new[] { C("+1 jaune") }, C("+1 vert"), 2, null).Stack == 3;
+        var skip = new TabletApp.Uno.UnoGame();
+        skip.SetHandForTest(new[] { C("passe ton tour jaune") });
+        var okSkip = skip.Play(new[] { C("passe ton tour jaune") }, C("3 jaune"), 0, null);
+        bool replay = okSkip.Ok && okSkip.Replay && okSkip.Won;
+        var wild = new TabletApp.Uno.UnoGame();
+        wild.SetHandForTest(new[] { C("joker"), C("5 jaune") });
+        var okWild = wild.Play(new[] { C("joker") }, C("5 rouge"), 0, TabletApp.Uno.UnoColor.Blue);
+        bool wildOk = okWild.Ok && okWild.TopColor == TabletApp.Uno.UnoColor.Blue && okWild.Uno;
+        var wildTop = new TabletApp.Uno.UnoGame();
+        wildTop.SetHandForTest(new[] { C("5 bleu") });
+        bool wildTopAsks = !wildTop.Play(new[] { C("5 bleu") }, C("joker"), 0, null).Ok;
+        bool wildTopOk = wildTop.Play(new[] { C("5 bleu") }, C("joker"), 0, TabletApp.Uno.UnoColor.Blue).Ok;
+        var drawGame = new TabletApp.Uno.UnoGame();
+        drawGame.NewGame(rng);
+        bool draw = drawGame.Draw(3, rng).Count == 3 && drawGame.Hand.Count == 11;
+        bool drawGuards;
+        try
+        {
+            new TabletApp.Uno.UnoGame().Draw(1, rng);
+            drawGuards = false;
+        }
+        catch (InvalidOperationException)
+        {
+            drawGuards = true;
+        }
+        bool prompt = GeminiBrain.BuildLivePrompt("X").Contains("uno_new_game")
+            && GeminiBrain.BuildLivePrompt("X").Contains("uno_play_cards")
+            && GeminiBrain.BuildLivePrompt("X").Contains("uno_draw")
+            && GeminiBrain.BuildLivePrompt("X").Contains("uno_set_pile");
+        bool skill = File.Exists(Path.Combine(AppContext.BaseDirectory, "Skills", "uno.md"));
+        bool coups = single && illegal && missing && comboOk && comboRefused && skipComboRefused && stackOk
+            && mixedRefused && stackGrows && replay && wildOk && wildTopAsks && wildTopOk;
+        var guard = new TabletApp.Uno.UnoRepeatGuard();
+        DateTime t0 = new(2026, 1, 1, 12, 0, 0);
+        guard.NoteDraw(t0, "PIOCHE:1");
+        guard.NotePlay(t0, "1 vert", replay: false);
+        guard.NoteNewGame(t0, "MAIN:8");
+        bool dedupe = guard.CheckDraw(t0.AddSeconds(1)) == "PIOCHE:1"
+            && guard.CheckDraw(t0.AddSeconds(6)) is null
+            && guard.CheckPlay(t0.AddSeconds(1))?.Contains("Un seul coup") == true
+            && guard.CheckPlay(t0.AddSeconds(6)) is null
+            && guard.CheckNewGame(t0.AddSeconds(1)) == "MAIN:8"
+            && guard.CheckNewGame(t0.AddSeconds(6)) is null;
+        var chain = new TabletApp.Uno.UnoRepeatGuard();
+        chain.NotePlay(t0, "passe ton tour rouge", replay: true);
+        dedupe = dedupe && chain.CheckPlay(t0.AddSeconds(1)) is null;
+        bool atlas;
+        try
+        {
+            atlas = TabletApp.Uno.UnoAtlas.Regions.Count == 51;
+        }
+        catch
+        {
+            atlas = false;
+        }
+        bool ok = composition && deal && parse && coups && draw && drawGuards && prompt && skill && dedupe && atlas;
+        log.Add($"Uno: paquet={composition}, donne={deal}, parse={parse}, coups={coups}, " +
+            $"pioche={draw && drawGuards}, prompt={prompt}, skill={skill}, dedupe={dedupe}, atlas={atlas} -> {(ok ? "OK" : "KO")}");
         return ok;
     }
 
@@ -1494,6 +1618,40 @@ internal static class SelfTest
         log.Add($"Bandeau busy (5 phases) -> {path}");
     }
 
+    private static void RenderUnoTable(List<string> log)
+    {
+        // Table de Uno : début (8 dos), combo (pile 1 rouge, 1 vert + 1
+        // bleu posés), pile joker +2 bordure bleue + pioche + UNO.
+        UnoCard Card(UnoColor color, UnoRank rank) => new(color, rank);
+        var states = new UnoTableState[]
+        {
+            new(null, null, Array.Empty<UnoCard>(), false, 8),
+            new(Card(UnoColor.Red, UnoRank.N1), null,
+                new[] { Card(UnoColor.Green, UnoRank.N1), Card(UnoColor.Blue, UnoRank.N1) }, false, 6),
+            new(Card(UnoColor.Wild, UnoRank.WildPlus2), UnoColor.Blue,
+                Array.Empty<UnoCard>(), true, 1),
+        };
+        const int cellWidth = 400;
+        const int cellHeight = 300;
+        using var strip = new SKBitmap(cellWidth * states.Length, cellHeight);
+        using var canvas = new SKCanvas(strip);
+        canvas.Clear(SKColors.Black);
+        for (int i = 0; i < states.Length; i++)
+        {
+            using var cell = new SKBitmap(cellWidth, cellHeight);
+            using var cellCanvas = new SKCanvas(cell);
+            UnoTablePainter.DrawTable(cellCanvas, cellWidth, cellHeight, states[i]);
+            using var image = SKImage.FromBitmap(cell);
+            canvas.DrawImage(image, (float)(i * cellWidth), 0f, SKSamplingOptions.Default);
+        }
+        using var stripImage = SKImage.FromBitmap(strip);
+        using var data = stripImage.Encode(SKEncodedImageFormat.Png, 100);
+        string path = Path.Combine(Path.GetTempPath(), "tabletapp-frame-uno.png");
+        using var stream = File.OpenWrite(path);
+        data.SaveTo(stream);
+        log.Add($"Table Uno -> {path}");
+    }
+
     private static void RenderTransitionFrame(List<string> log)
     {
         // Transition neutre -> joie à 25/50/75 % : les yeux sont identiques
@@ -1525,6 +1683,169 @@ internal static class SelfTest
     /// Sonde wake word (--wake-probe) : 30 s d'écoute avec niveaux, porte et
     /// détections affichés + indices de dépannage. Micro réel requis.
     /// </summary>
+    /// <summary>
+    /// Sonde micro (--probe-mic) : entrées WinMM, défauts de capture par
+    /// rôle, volume/muet, puis 6 s de mesure (parole, RMS max, ZCR moyen,
+    /// crête système). Micro réel requis.
+    /// </summary>
+    public static bool ProbeMic()
+    {
+        try
+        {
+            int count = NAudio.Wave.WaveIn.DeviceCount;
+            Console.WriteLine($"Micros WinMM : {count}");
+            for (int i = 0; i < count; i++)
+            {
+                var caps = NAudio.Wave.WaveIn.GetCapabilities(i);
+                Console.WriteLine($"  {i} : {caps.ProductName} ({caps.Channels} canaux)");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Micros WinMM : énumération impossible ({ex.Message}).");
+            return false;
+        }
+        try
+        {
+            var enumerator = new NAudio.CoreAudioApi.MMDeviceEnumerator();
+            foreach (NAudio.CoreAudioApi.Role role in new[]
+                {
+                    NAudio.CoreAudioApi.Role.Communications,
+                    NAudio.CoreAudioApi.Role.Multimedia,
+                    NAudio.CoreAudioApi.Role.Console,
+                })
+            {
+                try
+                {
+                    var dev = enumerator.GetDefaultAudioEndpoint(NAudio.CoreAudioApi.DataFlow.Capture, role);
+                    Console.WriteLine($"Défaut capture ({role}) : {dev.FriendlyName} [{dev.State}]");
+                }
+                catch
+                {
+                    Console.WriteLine($"Défaut capture ({role}) : (indisponible)");
+                }
+            }
+            try
+            {
+                var def = enumerator.GetDefaultAudioEndpoint(
+                    NAudio.CoreAudioApi.DataFlow.Capture, NAudio.CoreAudioApi.Role.Multimedia);
+                Console.WriteLine($"Volume micro : {def.AudioEndpointVolume.MasterVolumeLevelScalar * 100:F0} %, " +
+                    $"muet={def.AudioEndpointVolume.Mute}.");
+            }
+            catch
+            {
+                Console.WriteLine("Volume micro : (indisponible).");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Périphériques CoreAudio : énumération impossible ({ex.Message}).");
+        }
+        Console.WriteLine("PARLEZ MAINTENANT pendant 6 secondes (voix normale).");
+        bool speech = false;
+        double peak = 0;
+        double zcrSum = 0;
+        int zcrN = 0;
+        long bytes = 0;
+        double sysPeak = 0;
+        int sysN = 0;
+        object sync = new();
+        try
+        {
+            using var input = new NAudio.Wave.WaveInEvent
+            {
+                WaveFormat = new NAudio.Wave.WaveFormat(16000, 16, 1),
+            };
+            input.DataAvailable += (_, e) =>
+            {
+                double rms = TabletApp.AI.NAudioVoice.ComputeRms(e.Buffer, e.BytesRecorded);
+                double zcr = TabletApp.AI.NAudioVoice.ComputeZcr(e.Buffer, e.BytesRecorded);
+                lock (sync)
+                {
+                    bytes += e.BytesRecorded;
+                    if (rms > peak)
+                    {
+                        peak = rms;
+                    }
+                    if (rms >= TabletApp.AI.NAudioVoice.SpeechRmsThreshold)
+                    {
+                        speech = true;
+                    }
+                    zcrSum += zcr;
+                    zcrN++;
+                }
+            };
+            input.StartRecording();
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            while (watch.Elapsed < TimeSpan.FromSeconds(6))
+            {
+                Thread.Sleep(500);
+                try
+                {
+                    var enumerator = new NAudio.CoreAudioApi.MMDeviceEnumerator();
+                    var dev = enumerator.GetDefaultAudioEndpoint(
+                        NAudio.CoreAudioApi.DataFlow.Capture, NAudio.CoreAudioApi.Role.Multimedia);
+                    float v = dev.AudioMeterInformation.MasterPeakValue;
+                    lock (sync)
+                    {
+                        if (v > sysPeak)
+                        {
+                            sysPeak = v;
+                        }
+                        sysN++;
+                    }
+                }
+                catch
+                {
+                }
+            }
+            input.StopRecording();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Enregistrement impossible ({ex.Message}).");
+            return false;
+        }
+        Console.WriteLine($"6 s : parole={speech}, RMS max {peak:F0}, octets={bytes}, " +
+            $"ZCR moyen {(zcrN == 0 ? 1 : zcrSum / zcrN):F2} " +
+            $"(seuils : parole >= {TabletApp.AI.NAudioVoice.SpeechRmsThreshold:F0}, " +
+            $"ZCR voix < {TabletApp.AI.LiveSession.VoiceZcrThreshold:F2}).");
+        Console.WriteLine($"Crête système : max {sysPeak * 100:F0} % sur {sysN} mesures.");
+        return true;
+    }
+
+    /// <summary>
+    /// Fabrique l'atlas Uno Express (--build-atlas [dossier]) depuis
+    /// docs/uno-source/*.png (+ déclinaisons de teintes). Sortie dans le
+    /// dossier donné (%TEMP%\uno-atlas par défaut), à copier vers
+    /// docs/uno-atlas après contrôle visuel de contact.png.
+    /// </summary>
+    public static bool BuildUnoAtlas(string? outDir)
+    {
+        string? root = null;
+        string? dir = AppContext.BaseDirectory;
+        for (int i = 0; i < 10 && dir is not null; i++)
+        {
+            if (File.Exists(Path.Combine(dir, "docs", "uno-source", "numbers.png")))
+            {
+                root = dir;
+                break;
+            }
+            dir = Path.GetDirectoryName(dir);
+        }
+        if (root is null)
+        {
+            Console.WriteLine("docs/uno-source introuvable depuis " + AppContext.BaseDirectory + ".");
+            return false;
+        }
+        string dest = outDir ?? Path.Combine(Path.GetTempPath(), "uno-atlas");
+        Directory.CreateDirectory(dest);
+        using var report = new StreamWriter(Path.Combine(dest, "measure.txt"));
+        return TabletApp.Uno.UnoAtlasBuilder.BuildAtlas(
+            Path.Combine(root, "docs", "uno-source"), dest,
+            line => { Console.WriteLine(line); report.WriteLine(line); });
+    }
+
     /// <summary>
     /// Enregistre 12 s de micro (16 kHz mono) vers %TEMP%\wake-heypatate.wav
     /// pour le balayage --wake-sweep. Reste local, jamais commité.

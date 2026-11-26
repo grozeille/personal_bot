@@ -1,6 +1,6 @@
-# Rapport de tests BDD — 2026-11-25 00:02
+# Rapport de tests BDD — 2026-11-25 23:14
 
-*68 scénarios : 68 OK, 0 KO.*
+*83 scénarios : 83 OK, 0 KO.*
 
 ## Clignement des yeux — Clignement régulier sur 30 secondes — OK
 
@@ -13,6 +13,10 @@
 ## Cycle de sommeil — Endormissement et réveil — OK
 
 ![Endormissement et réveil](Cycle_de_sommeil_Endormissement_et_réveil_1.png)
+
+## Debug audio des discussions — Purge des vieux tours debug — OK
+
+## Debug audio des discussions — Tours enregistrés en WAV lisibles — OK
 
 ## Enrôlement du wake word — Calibration locale prioritaire — OK
 
@@ -88,6 +92,12 @@
 
 ![Toutes les expressions (wink)](Expressions_du_visage_Toutes_les_expressions__wink__1.png)
 
+## Mémoire des discussions — La consolidation réécrit le carnet — OK
+
+## Mémoire des discussions — Le journal garde les tours et s'élague — OK
+
+## Mémoire des discussions — Le prompt contient la mémoire — OK
+
 ## Mise à jour depuis le NAS — NAS hors-ligne silencieux — OK
 
 ## Mise à jour depuis le NAS — Œil droit confirme et installe — OK
@@ -102,6 +112,16 @@
 
 ## Mise à jour depuis le NAS — Tap sur l'icône affiche la confirmation — OK
 
+## Pause et reprise des discussions — L'outil pause termine la session live — OK
+
+## Pause et reprise des discussions — Pause ancienne = nouvelle discussion — OK
+
+## Pause et reprise des discussions — Pause puis reprise rapide garde le contexte — OK
+
+## Pause et reprise des discussions — Reprise sans re-bonjour — OK
+
+## Pause et reprise des discussions — Sans pause = nouvelle discussion — OK
+
 ## Quitter sans clavier — Œil gauche reste — OK
 
 ## Quitter sans clavier — Tap dans le coin puis œil droit quitte — OK
@@ -114,6 +134,8 @@
 
 ![Saccades régulières sur 30 secondes](Regard_de_surveillance_Saccades_régulières_sur_30_secondes_1.png)
 
+## Session Live — Annonce de pile transmise au modèle — OK
+
 ## Session Live — Appel d'outil dupliqué ignoré — OK
 
 ## Session Live — Bruit bref sans fin de phrase, silence streamé — OK
@@ -125,6 +147,8 @@
 ## Session Live — Compteur de tour remis à zéro après la réponse — OK
 
 ## Session Live — Connexion live impossible — OK
+
+## Session Live — Coup de Uno transmis avec ses arguments — OK
 
 ## Session Live — Envois en échec répétés demandent le repli — OK
 
@@ -144,6 +168,10 @@
 
 ## Session Live — Micro fermé tant que le haut-parleur joue — OK
 
+## Session Live — Nouvelle partie de Uno distribue la main — OK
+
+## Session Live — Pioche de Uno transmet le compte — OK
+
 ## Session Live — Prise de photo envoie l'image au modèle — OK
 
 ## Session Live — Prout demandé joue un son au lieu de la voix — OK
@@ -153,6 +181,8 @@
 ## Session Live — Recherche Wikipédia renvoie un résumé — OK
 
 ## Session Live — Réponse bloquée rouverte par le watchdog — OK
+
+## Session Live — Session live branchée sur l'enregistreur debug — OK
 
 ## Session Live — Session live complète avec émotion — OK
 

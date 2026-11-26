@@ -109,6 +109,10 @@ internal static class RobotSounds
                 Blip(300, 280, 0.14, sampleRate),
                 Silence(0.10, sampleRate),
                 Blip(280, 260, 0.16, sampleRate)),
+            "pause" => Concat(
+                Blip(880, 880, 0.09, sampleRate),
+                Silence(0.07, sampleRate),
+                Blip(660, 660, 0.13, sampleRate)),
             _ => Array.Empty<short>(),
         };
         if (samples.Length == 0)

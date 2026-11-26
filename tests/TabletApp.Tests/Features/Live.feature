@@ -41,6 +41,32 @@ Fonctionnalité: Session Live
     Quand la session live se déroule
     Alors un Pokémon mystère est renvoyé au modèle
 
+  Scénario: Nouvelle partie de Uno distribue la main
+    Soit un serveur live qui démarre le Uno
+    Quand la session live se déroule
+    Alors la main de Uno est renvoyée au modèle
+
+  Scénario: Coup de Uno transmis avec ses arguments
+    Soit un serveur live qui joue au Uno
+    Quand la session live se déroule
+    Alors le coup de Uno est transmis avec cartes et dessus
+
+  Scénario: Pioche de Uno transmet le compte
+    Soit un serveur live qui pioche au Uno
+    Quand la session live se déroule
+    Alors la pioche de Uno est transmise avec son compte
+
+  Scénario: Annonce de pile transmise au modèle
+    Soit un serveur live qui annonce la pile
+    Quand la session live se déroule
+    Alors la pile est transmise avec dessus et couleur
+
+  Scénario: Session live branchée sur l'enregistreur debug
+    Soit un serveur live silencieux
+    Et l'enregistrement debug est actif
+    Quand la session live se déroule
+    Alors des fichiers de tours debug existent
+
   Scénario: Le robot sourd pendant sa propre parole
     Soit un serveur live qui parle puis termine son tour
     Quand la session live tourne en semi-duplex

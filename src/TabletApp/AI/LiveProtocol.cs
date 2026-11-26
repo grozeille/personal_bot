@@ -2,9 +2,10 @@ using System.Text.Json;
 
 namespace TabletApp.AI;
 
-/// <summary>Appel d'outil reçu (set_emotion : Emotion renseigné ; move_head : Yaw/Pitch/Roll).</summary>
+/// <summary>Appel d'outil reçu (set_emotion : Emotion renseigné ; move_head : Yaw/Pitch/Roll ; uno_play_cards : Cards/Top/Color/Stack ; uno_draw : Count).</summary>
 internal sealed record LiveToolCall(string Id, string Name, string? Emotion, string? Sound, string? Gesture,
-    double? Yaw = null, double? Pitch = null, double? Roll = null, string? Query = null, string? Camera = null);
+    double? Yaw = null, double? Pitch = null, double? Roll = null, string? Query = null, string? Camera = null,
+    string? Cards = null, string? Top = null, string? Color = null, double? Stack = null, double? Count = null);
 
 /// <summary>Mise à jour serveur décodée (plusieurs aspects peuvent coexister).</summary>
 internal sealed record LiveServerUpdate(
@@ -164,6 +165,11 @@ internal static class LiveProtocol
                             },
                             new
                             {
+                                name = "pause_conversation",
+                                description = "Suspend la discussion quand l'enfant dit attends, pause ou tais-toi deux minutes. La reprise garde le contexte.",
+                            },
+                            new
+                            {
                                 name = "run_calibration",
                                 description = "Relance la calibration du wake word quand on le demande.",
                             },
@@ -245,6 +251,58 @@ internal static class LiveProtocol
                                         pitch = new { type = "NUMBER", description = "Inclinaison haut/bas en degrés.", },
                                         roll = new { type = "NUMBER", description = "Inclinaison latérale en degrés.", },
                                     },
+                                },
+                            },
+                            new
+                            {
+                                name = "uno_new_game",
+                                description = "Démarre une partie de Uno : mélange et distribue 8 cartes secrètes au robot.",
+                            },
+                            new
+                            {
+                                name = "uno_play_cards",
+                                description = "Joue 1+ cartes de Uno (combo = même symbole, séparées par des virgules). Le dessus vient de la photo.",
+                                parameters = new
+                                {
+                                    type = "OBJECT",
+                                    properties = new
+                                    {
+                                        cards = new { type = "STRING", description = "Cartes jouées en français, ex. '1 vert, 1 bleu'.", },
+                                        top = new { type = "STRING", description = "Carte du dessus vue en photo, ex. '1 rouge'. Absente si le robot commence.", },
+                                        stack = new { type = "NUMBER", description = "Total du cumul +1/+2 en cours (0 sinon).", },
+                                        color = new { type = "STRING", description = "Couleur choisie (joker joué) ou annoncée (dessus joker) : rouge, jaune, vert, bleu.", },
+                                    },
+                                    required = new[] { "cards" },
+                                },
+                            },
+                            new
+                            {
+                                name = "uno_draw",
+                                description = "Pioche des cartes de Uno (quand on ne peut pas jouer, ou pour un cumul).",
+                                parameters = new
+                                {
+                                    type = "OBJECT",
+                                    properties = new
+                                    {
+                                        count = new { type = "NUMBER", description = "Nombre de cartes à piocher.", },
+                                        top = new { type = "STRING", description = "Carte du dessus annoncée (mise à jour de l'affichage).", },
+                                    },
+                                    required = new[] { "count" },
+                                },
+                            },
+                            new
+                            {
+                                name = "uno_set_pile",
+                                description = "Signale la carte annoncée sur la pile pour l'afficher. À appeler dès l'annonce, avant de jouer ou piocher.",
+                                parameters = new
+                                {
+                                    type = "OBJECT",
+                                    properties = new
+                                    {
+                                        top = new { type = "STRING", description = "Carte du dessus annoncée, ex. '5 rouge'.", },
+                                        color = new { type = "STRING", description = "Couleur annoncée si la pile est un joker : rouge, jaune, vert, bleu.", },
+                                    },
+                                    required = new[] { "top" },
                                 },
                             }
                         },
@@ -381,7 +439,8 @@ internal static class LiveProtocol
                 string name = call.TryGetProperty("name", out JsonElement nameEl)
                     ? nameEl.GetString() ?? "" : "";
                 list.Add(new LiveToolCall(id, name, ReadEmotion(call), ReadSound(call), ReadGesture(call),
-                    ReadAxis(call, "yaw"), ReadAxis(call, "pitch"), ReadAxis(call, "roll"), ReadArg(call, "query"), ReadArg(call, "camera")));
+                    ReadAxis(call, "yaw"), ReadAxis(call, "pitch"), ReadAxis(call, "roll"), ReadArg(call, "query"), ReadArg(call, "camera"),
+                    ReadArg(call, "cards"), ReadArg(call, "top"), ReadArg(call, "color"), ReadAxis(call, "stack"), ReadAxis(call, "count")));
             }
             return LiveServerUpdate.Empty with { ToolCalls = list };
         }

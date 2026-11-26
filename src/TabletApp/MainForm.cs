@@ -34,6 +34,10 @@ internal sealed class MainForm : Form
     private readonly WikipediaSearch _wiki = new();
     private readonly Lazy<TabletApp.Data.PokedexReader?> _pokedex = new(() => TabletApp.Data.PokedexReader.LoadDefault());
     private readonly Random _draw = new();
+    private readonly TabletApp.Uno.UnoGame _uno = new();
+    private readonly TabletApp.Uno.UnoRepeatGuard _unoGuard = new();
+    private readonly MemoryStore _memory = new();
+    private readonly PauseTracker _pause = new();
     private bool _applying;
     private bool _iconPreview;
     private bool _voiceRunning;
@@ -550,13 +554,37 @@ internal sealed class MainForm : Form
     /// écoute → pense → répond avec émotion, adieux après 2 silences ou D.
     /// </summary>
     /// <returns>Vrai si les envois ont lâché (repli unaire demandé).</returns>
+    /// <summary>Consolidation mémoire en fin de discussion (best effort, fond).</summary>
+    private async Task ConsolidateMemoryAsync(string key)
+    {
+        try
+        {
+            string? updated = await MemoryStore.ConsolidateAsync(
+                _memory,
+                (mem, journal, ct) => new GeminiBrain(key).SummarizeMemoryAsync(mem, journal, ct),
+                CancellationToken.None).ConfigureAwait(false);
+            if (updated is not null)
+            {
+                VoiceLog.Info("Mémoire consolidée.");
+            }
+        }
+        catch (Exception ex)
+        {
+            VoiceLog.Info($"Mémoire non consolidée : {ex.GetType().Name}.");
+        }
+    }
+
     private async Task<bool> RunLiveAsync(string key, CancellationToken ct)
     {
         await using var socket = new LiveClientWebSocket();
         using var mic = new LiveMic();
         using var player = new LivePlayer();
+        bool resume = _pause.TryResume(DateTime.Now);
+        VoiceLog.Info(resume ? "Reprise de discussion (pause)." : "Nouvelle discussion.");
+        string livePrompt = GeminiBrain.BuildLivePrompt(
+            GeminiBrain.Personality, new TabletApp.Skills.SkillLibrary().List(), _memory.BuildBlock());
         var session = new LiveSession(
-            key, GeminiBrain.LiveSystemPrompt, GeminiBrain.EmotionNames, RobotSounds.Names, GeminiBrain.GestureNames,
+            key, livePrompt, GeminiBrain.EmotionNames, RobotSounds.Names, GeminiBrain.GestureNames,
             socket, mic, player,
             new LiveCallbacks(
                 OnEmotion: emotion => Ui(() =>
@@ -580,8 +608,16 @@ internal sealed class MainForm : Form
                         VoiceLog.Info($"Son inconnu ignoré : {sound}.");
                     }
                 },
-                OnHeardTranscript: text => VoiceLog.Info($"Entendu : '{text}'."),
-                OnRobotTranscript: text => VoiceLog.Info($"Robot : {text}"),
+                OnHeardTranscript: text =>
+                {
+                    _memory.AppendHeard(text);
+                    VoiceLog.Info($"Entendu : '{text}'.");
+                },
+                OnRobotTranscript: text =>
+                {
+                    _memory.AppendRobot(text);
+                    VoiceLog.Info($"Robot : {text}");
+                },
                 OnSpeaking: speaking => Ui(() => _face.Speaking = speaking),
                 OnGlow: glow => Ui(() => _face.Glow = glow),
                 OnUserSpeech: () => Ui(() => _face.NotifyActivity()),
@@ -627,9 +663,144 @@ internal sealed class MainForm : Form
                     string? fiche = _pokedex.Value?.RandomSummary(_draw);
                     VoiceLog.Info("Pokédex : tirage.");
                     return fiche ?? "Pokédex indisponible.";
+                },
+                OnUnoNewGame: () =>
+                {
+                    string? replay = _unoGuard.CheckNewGame(DateTime.Now);
+                    if (replay is not null)
+                    {
+                        VoiceLog.Info("Uno : re-donne ignorée (doublon).");
+                        return replay;
+                    }
+                    var hand = _uno.NewGame(_draw);
+                    Ui(() => _face.UnoTable = new UnoTableState(
+                        null, null, Array.Empty<TabletApp.Uno.UnoCard>(), false, hand.Count));
+                    VoiceLog.Info("Uno : nouvelle partie.");
+                    string message = "Nouvelle partie ! Ta main secrète (8 cartes, ne la montre ni ne la lis jamais) : "
+                        + string.Join(", ", hand.Select(c => $"« {c.ToFrench()} »")) + ".";
+                    _unoGuard.NoteNewGame(DateTime.Now, message);
+                    return message;
+                },
+                OnUnoPlay: (cardsText, topText, stack, colorText) =>
+                {
+                    var cards = TabletApp.Uno.UnoCard.TryParseMany(cardsText);
+                    if (cards is null)
+                    {
+                        return $"Je n'ai pas compris les cartes « {cardsText} ». " +
+                            "Noms français séparés par des virgules, ex. '1 vert, 1 bleu'.";
+                    }
+                    TabletApp.Uno.UnoCard? top = null;
+                    if (!string.IsNullOrWhiteSpace(topText))
+                    {
+                        if (!TabletApp.Uno.UnoCard.TryParse(topText, out TabletApp.Uno.UnoCard parsed))
+                        {
+                            return $"Je n'ai pas compris le dessus « {topText} ». Ex. '1 rouge'.";
+                        }
+                        top = parsed;
+                    }
+                    TabletApp.Uno.UnoColor? color = null;
+                    if (!string.IsNullOrWhiteSpace(colorText))
+                    {
+                        if (!TabletApp.Uno.UnoCard.TryParseColor(colorText, out TabletApp.Uno.UnoColor parsedColor)
+                            || parsedColor == TabletApp.Uno.UnoColor.Wild)
+                        {
+                            return $"Couleur « {colorText} » inconnue : rouge, jaune, vert ou bleu.";
+                        }
+                        color = parsedColor;
+                    }
+                    string? dupe = _unoGuard.CheckPlay(DateTime.Now);
+                    if (dupe is not null)
+                    {
+                        VoiceLog.Info("Uno : coup doublon ignoré.");
+                        return dupe;
+                    }
+                    var result = _uno.Play(cards, top, (int)(stack ?? 0), color);
+                    if (result.Ok && result.Top is not null)
+                    {
+                        _unoGuard.NotePlay(DateTime.Now, result.Top.ToFrench(), result.Replay);
+                    }
+                    var old = _face.UnoTable;
+                    Ui(() => _face.UnoTable = new UnoTableState(
+                        top ?? old?.Pile,
+                        top is null ? old?.PileColor : (top.IsWild ? color : null),
+                        result.Ok ? cards : old?.Played ?? Array.Empty<TabletApp.Uno.UnoCard>(),
+                        false, result.Hand.Count));
+                    VoiceLog.Info($"Uno : {cardsText} sur {topText ?? "(départ)"} -> {(result.Ok ? "ok" : "refusé")}.");
+                    return result.Message;
+                },
+                OnUnoDraw: (count, topText) =>
+                {
+                    if (!_uno.Started)
+                    {
+                        return "Aucune partie en cours : appelle uno_new_game.";
+                    }
+                    string? replay = _unoGuard.CheckDraw(DateTime.Now);
+                    if (replay is not null)
+                    {
+                        VoiceLog.Info("Uno : pioche doublon ignorée.");
+                        return replay;
+                    }
+                    TabletApp.Uno.UnoCard? top = null;
+                    if (!string.IsNullOrWhiteSpace(topText))
+                    {
+                        if (!TabletApp.Uno.UnoCard.TryParse(topText, out TabletApp.Uno.UnoCard parsed))
+                        {
+                            return $"Je n'ai pas compris le dessus « {topText} ». Ex. '1 rouge'.";
+                        }
+                        top = parsed;
+                    }
+                    var drawn = _uno.Draw((int)(count ?? 1), _draw);
+                    var old = _face.UnoTable;
+                    Ui(() => _face.UnoTable = new UnoTableState(
+                        top ?? old?.Pile, top is null ? old?.PileColor : null,
+                        Array.Empty<TabletApp.Uno.UnoCard>(), true, _uno.Hand.Count));
+                    VoiceLog.Info($"Uno : pioche {drawn.Count}.");
+                    string message = "Tu pioches " + string.Join(", ", drawn.Select(c => $"« {c.ToFrench()} »"))
+                        + $". Ta main ({_uno.Hand.Count}) : "
+                        + string.Join(", ", _uno.Hand.Select(c => $"« {c.ToFrench()} »")) + ".";
+                    _unoGuard.NoteDraw(DateTime.Now, message);
+                    return message;
+                },
+                OnUnoSetPile: (topText, colorText) =>
+                {
+                    if (!_uno.Started)
+                    {
+                        return "Aucune partie en cours : appelle uno_new_game.";
+                    }
+                    if (!TabletApp.Uno.UnoCard.TryParse(topText, out TabletApp.Uno.UnoCard top))
+                    {
+                        return $"Je n'ai pas compris la pile « {topText} ». Redemande ou montre-la moi.";
+                    }
+                    TabletApp.Uno.UnoColor? color = null;
+                    if (!string.IsNullOrWhiteSpace(colorText))
+                    {
+                        if (!TabletApp.Uno.UnoCard.TryParseColor(colorText, out TabletApp.Uno.UnoColor parsedColor)
+                            || parsedColor == TabletApp.Uno.UnoColor.Wild)
+                        {
+                            return $"Couleur « {colorText} » inconnue : rouge, jaune, vert ou bleu.";
+                        }
+                        color = parsedColor;
+                    }
+                    Ui(() => _face.UnoTable = new UnoTableState(
+                        top, top.IsWild ? color : null,
+                        Array.Empty<TabletApp.Uno.UnoCard>(), false, _uno.Hand.Count));
+                    VoiceLog.Info($"Uno : pile {top.ToFrench()}.");
+                    return $"Compris, la pile est « {top.ToFrench()} »."
+                        + (top.IsWild && color is null ? " Demande la couleur choisie avant de jouer." : "");
                 }),
             voiceName: LiveProtocol.ResolveVoice());
         _liveSession = session;
+        if (resume)
+        {
+            session.Greeting = LiveSession.ResumePrompt;
+        }
+        using TurnRecorder? debugRecorder =
+            Program.RecordDebug || DebugOptions.Load().RecordAudio ? new TurnRecorder() : null;
+        if (debugRecorder is not null)
+        {
+            VoiceLog.Info($"Debug audio : {TurnRecorder.DefaultDir}.");
+        }
+        session.Recorder = debugRecorder;
         try
         {
             await session.RunAsync(ct);
@@ -638,6 +809,18 @@ internal sealed class MainForm : Form
         finally
         {
             _liveSession = null;
+            if (session.PausedByTool)
+            {
+                _pause.Pause(DateTime.Now);
+                Ui(() => _face.SetExpression(RobotExpression.Tired));
+                Ui(() => _face.Glow = VoiceGlow.None);
+                _ = PlaySoundAsync("pause");
+                VoiceLog.Info("Discussion en pause (contexte gardé 10 min).");
+            }
+            else
+            {
+                _ = ConsolidateMemoryAsync(key);
+            }
         }
     }
 
@@ -652,14 +835,19 @@ internal sealed class MainForm : Form
                 Ui(() => _face.SetExpression(RobotExpression.Thinking));
                 Ui(() => _face.Glow = VoiceGlow.Thinking);
                 Ui(() => _face.NotifyActivity());
+                _memory.AppendHeard(heard);
                 var watch = System.Diagnostics.Stopwatch.StartNew();
-                var thought = await brain.ThinkAsync(history, heard, ct);
+                var thought = await brain.ThinkAsync(history, heard, ct, _memory.BuildBlock());
                 string son = thought.Sound is null ? "" : $" + son {thought.Sound}";
                 VoiceLog.Info($"Pense : '{thought.Reply ?? "(rien)"}' + " +
                     $"{thought.Emotion ?? "(neutre)"}{son} ({watch.Elapsed.TotalSeconds:F1} s).");
                 return thought;
             },
-            (text, _) => SpeakAsync(speech, text, ct),
+            async (text, _) =>
+            {
+                _memory.AppendRobot(text);
+                await SpeakAsync(speech, text, ct).ConfigureAwait(false);
+            },
             expr => Ui(() => _face.SetExpression(expr)),
             playSound: (sound, _) => PlaySoundAsync(sound));
         _conversation = chat;
@@ -670,6 +858,7 @@ internal sealed class MainForm : Form
         finally
         {
             _conversation = null;
+            _ = ConsolidateMemoryAsync(key);
         }
     }
 
@@ -768,6 +957,7 @@ internal sealed class MainForm : Form
         finally
         {
             _face.Concentrated = false;
+            _face.UnoTable = null;
             _wake?.Start();
             _chatRunning = false;
             _chatCts?.Dispose();
